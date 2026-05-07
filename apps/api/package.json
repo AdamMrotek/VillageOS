@@ -1,0 +1,8 @@
+{
+  "name": "@repo/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "python -m uvicorn main:app --reload --port 8000"
+  }
+}

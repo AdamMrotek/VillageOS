@@ -1,0 +1,15 @@
+{
+  "name": "villageos",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "format": "turbo format"
+  },
+  "devDependencies": {
+    "turbo": "latest",
+    "typescript": "^5"
+  },
+  "packageManager": "pnpm@11.0.8"
+}
