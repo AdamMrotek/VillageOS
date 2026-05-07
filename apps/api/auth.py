@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException
@@ -8,7 +9,7 @@ from jwt import PyJWKClient
 CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL", "")
 CLERK_ISSUER = os.getenv("CLERK_ISSUER", "")
 
-_jwks_client: PyJWKClient | None = None
+_jwks_client: Optional[PyJWKClient] = None
 
 def _get_jwks_client() -> PyJWKClient:
     global _jwks_client

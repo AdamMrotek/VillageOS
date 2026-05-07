@@ -3,6 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "python -m uvicorn main:app --reload --port 8000"
+    "dev": "python -m uvicorn main:app --reload --reload-exclude '.venv' --port 8000"
   }
 }

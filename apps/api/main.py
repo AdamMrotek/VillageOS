@@ -29,4 +29,8 @@ async def health():
 
 @app.get("/api/me")
 async def me(user: dict = Depends(get_current_user)):
-    return {"user_id": user.get("sub"), "claims": user}
+    return {
+        "user_id": user.get("sub"),
+        "first_name": user.get("first_name"),
+        "last_name": user.get("last_name"),
+    }
