@@ -2,7 +2,7 @@
 
 ## Environment variables
 
-Copy the example file and fill in the Clerk keys from **Clerk dashboard → API Keys**:
+Copy the example file and fill in the Supabase keys from **Supabase dashboard → Project Settings → API**:
 
 ```bash
 cp apps/web/.env.local.example apps/web/.env.local
@@ -10,8 +10,8 @@ cp apps/web/.env.local.example apps/web/.env.local
 
 | Variable | Description |
 |---|---|
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
-| `CLERK_SECRET_KEY` | Clerk secret key |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
 | `NEXT_PUBLIC_API_URL` | Base URL of the FastAPI backend (e.g. `http://localhost:8000`) |
 
 ---
@@ -64,23 +64,31 @@ The `components.json` in `packages/ui` directs the CLI to the correct location a
 
 ## Auth flow (frontend side)
 
-1. User signs in at `/sign-in` — Clerk issues a session JWT.
-2. Read the token in a Server Component or Server Action:
+Authentication uses Supabase SSR with server-side cookie-based sessions.
+
+**Key packages:** `@supabase/supabase-js`, `@supabase/ssr`
+
+**Session flow:**
+1. User signs in via Supabase Auth UI at `/sign-in`
+2. `@supabase/ssr` stores the session in an HttpOnly cookie
+3. `src/middleware.ts` refreshes the session on every request
+4. Server Components create a server-side Supabase client:
    ```ts
-   import { getToken } from "@clerk/nextjs/server";
-   const token = await getToken();
+   import { createServerClient } from "@supabase/ssr";
    ```
-   Or in a Client Component:
+5. Client Components use the browser client:
    ```ts
-   import { useAuth } from "@clerk/nextjs";
-   const { getToken } = useAuth();
-   const token = await getToken();
+   import { createBrowserClient } from "@supabase/ssr";
    ```
-3. Pass it to the API as a Bearer token:
-   ```ts
-   const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/me`, {
-     headers: { Authorization: `Bearer ${token}` },
-   });
-   ```
+
+**Calling the FastAPI backend:**
+```ts
+const { data: { session } } = await supabase.auth.getSession();
+const token = session?.access_token;
+
+const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/me`, {
+  headers: { Authorization: `Bearer ${token}` },
+});
+```
 
 See [BACKEND.md](BACKEND.md#auth-flow-backend-side) for how FastAPI verifies the token.

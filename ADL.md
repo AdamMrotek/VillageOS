@@ -73,54 +73,31 @@ cp .env.example .env   # fill in Clerk values
 ```
 apps/api/
   main.py      — FastAPI app, CORS, /health, /api/me
-  auth.py      — get_current_user dependency (Clerk JWT verification)
+  auth.py      — get_current_user dependency
   requirements.txt
 ```
 
 ---
 
-## ADR-006 — Clerk for authentication
+## ADR-006,007,008 — Replace Clerk with Supabase (Auth + DB)
 
-**Decision:** Clerk handles user identity in `apps/web`. `clerkMiddleware` protects all routes except `/sign-in` and `/sign-up`.
-
-**Reasons:**
-- Clerk issues RS256-signed JWTs that FastAPI can verify without a Clerk SDK
-- Hosted sign-in/sign-up UI removes all auth form work
-- Works natively with Next.js App Router via `@clerk/nextjs`
-
-**Key files:**
-- `apps/web/src/middleware.ts` — route protection
-- `apps/web/src/app/layout.tsx` — `ClerkProvider` root wrapper
-- `apps/web/src/app/sign-in/[[...sign-in]]/page.tsx`
-- `apps/web/src/app/sign-up/[[...sign-up]]/page.tsx`
-
-**Required env vars** (copy from `.env.local.example`):
-```
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
-CLERK_SECRET_KEY=sk_...
-NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
-NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-```
-
----
-
-## ADR-007 — JWT verification in FastAPI via Clerk JWKS
-
-**Decision:** FastAPI verifies Clerk-issued JWTs using `PyJWT` + `PyJWKClient`, fetching Clerk's public JWKS once and caching the key set.
+**Decision:** Supersede ADR-006 and ADR-007 by replacing old auth with Supabase for both authentication and the primary PostgreSQL database.
 
 **Reasons:**
-- Stateless verification — no Clerk SDK or network round-trip per request beyond the initial JWKS fetch
-- `PyJWKClient` handles key rotation automatically
-- RS256 algorithm; no shared secret required between services
+- **Data ownership:** Direct access to `auth.users`
+- **Simplified stack:** Consolidates identity and database into a single provider
+- **Native Postgres:** Provides the foundation for `pgvector`, essential for planned AI/RAG features
 
-**Flow:**
-1. User signs in → Clerk issues a session JWT
-2. Next.js frontend calls FastAPI with `Authorization: Bearer <token>`
-3. FastAPI's `get_current_user` dependency fetches the signing key from the JWKS cache and calls `jwt.decode`
-4. Verified `sub` (Clerk user ID) is available in every protected route handler
+**Impact:**
+- `apps/web` uses `@supabase/ssr` + `@supabase/supabase-js` for session management via server-side cookies
+- `apps/api` (FastAPI) verifies Supabase JWTs using `PyJWT` with HS256 and `SUPABASE_JWT_SECRET`
 
-**Required env vars** (copy from `apps/api/.env.example`):
+**Required env vars:**
 ```
-CLERK_JWKS_URL=https://<your-clerk-domain>/.well-known/jwks.json
-CLERK_ISSUER=https://<your-clerk-domain>
+# apps/web/.env.local
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+
+# apps/api/.env
+SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 ```

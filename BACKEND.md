@@ -2,7 +2,7 @@
 
 ## Environment variables
 
-Copy the example file and fill in the Clerk values from **Clerk dashboard → API Keys**:
+Copy the example file and fill in the Supabase JWT secret from **Supabase dashboard → Project Settings → API → JWT Secret**:
 
 ```bash
 cp apps/api/.env.example apps/api/.env
@@ -10,8 +10,8 @@ cp apps/api/.env.example apps/api/.env
 
 | Variable | Description |
 |---|---|
-| `CLERK_JWKS_URL` | Clerk JWKS endpoint for JWT verification |
-| `CLERK_ISSUER` | Clerk issuer URL |
+| `SUPABASE_JWT_SECRET` | Supabase JWT secret for verifying access tokens |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins (default: `http://localhost:3000`) |
 
 ---
 
@@ -27,7 +27,7 @@ pip freeze | grep <package> >> requirements.txt
 
 ## Auth flow (backend side)
 
-FastAPI verifies the Clerk JWT using the `get_current_user` dependency, which fetches Clerk's JWKS and validates the token on every request.
+FastAPI verifies Supabase JWTs using `PyJWT` with HS256 and the project JWT secret. The `get_current_user` dependency in `auth.py` handles verification on every protected request.
 
 Protected route example:
 
@@ -37,9 +37,9 @@ from fastapi import Depends
 
 @app.get("/api/example")
 async def example(user: dict = Depends(get_current_user)):
-    return {"user_id": user["sub"]}
+    return {"user_id": user["sub"], "email": user["email"]}
 ```
 
-The decoded claims dict includes `sub` (Clerk user ID) and standard JWT fields.
+The decoded claims dict includes `sub` (Supabase user UUID), `email`, `role`, and standard JWT fields.
 
 See [FRONTEND.md](FRONTEND.md#auth-flow-frontend-side) for how the frontend obtains and sends the token.

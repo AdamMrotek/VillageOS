@@ -28,6 +28,16 @@ pip install -r requirements.txt
 
 ### 3. Configure environment variables
 
+**Frontend** — copy and fill in Supabase keys:
+```bash
+cp apps/web/.env.local.example apps/web/.env.local
+```
+
+**Backend** — copy and fill in the Supabase JWT secret:
+```bash
+cp apps/api/.env.example apps/api/.env
+```
+
 See [FRONTEND.md](FRONTEND.md#environment-variables) and [BACKEND.md](BACKEND.md#environment-variables) for the required keys in each service.
 
 ---
