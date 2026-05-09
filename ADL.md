@@ -79,7 +79,7 @@ apps/api/
 
 ---
 
-## ADR-006,007,008 — Replace Clerk with Supabase (Auth + DB)
+## ADR-006 — Replace Clerk with Supabase (Auth + DB)
 
 **Decision:** Supersede ADR-006 and ADR-007 by replacing old auth with Supabase for both authentication and the primary PostgreSQL database.
 
@@ -101,3 +101,19 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 # apps/api/.env
 SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 ```
+
+---
+
+## ADR-007 — Layered FastAPI structure and `events` table
+
+**Decision:** Organise `apps/api` into four explicit layers (`core/`, `schemas/`, `routers/`, `services/`) and store calendar events in a dedicated `events` table with JSONB for nested data and RLS for user isolation.
+
+**Reasons:**
+- **Layered structure:** Flat files (`main.py`, `auth.py`, `schemas.py`) become unmanageable as routes multiply. Separating HTTP handling (routers), business logic (services), data shapes (schemas), and shared dependencies (core) keeps each file focused and testable in isolation.
+- **JSONB for `action_items`:** Action items are always read and written with their parent event, never queried independently. JSONB avoids a join table while preserving full structure — Pydantic validates the shape on both read and write.
+- **RLS over application-level filtering:** Enabling Row Level Security on `events` means a misconfigured query cannot accidentally expose another user's data. The API uses the service role key but sets `user_id` explicitly; the RLS policy acts as a safety net.
+- **`confidence` column on manual events:** Set to `1.0` for events created directly by the user; populated by the AI extraction pipeline for text-derived events. Allows the frontend to surface low-confidence extractions for review without a separate table.
+
+**See also:** [DATABASE.md](DATABASE.md)
+
+---

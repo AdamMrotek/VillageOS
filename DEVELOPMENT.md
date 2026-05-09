@@ -79,3 +79,4 @@ cd apps/api && python -m uvicorn main:app --reload --port 8000
 
 - [FRONTEND.md](FRONTEND.md) — Next.js env setup, dependencies, build/lint, shadcn, auth
 - [BACKEND.md](BACKEND.md) — FastAPI env setup, Python dependencies, auth
+- [DATABASE.md](DATABASE.md) — Supabase tables, migrations, seed data, Pydantic ↔ DB mapping
