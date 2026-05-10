@@ -1,0 +1,8 @@
+{
+  "event_type": ["birthday"],
+  "start_time": "2026-05-16T14:00:00",
+  "end_time": "2026-05-16T16:00:00",
+  "is_all_day": false,
+  "action_items_keywords": ["rsvp"],
+  "notes": "WhatsApp informal with explicit date. Tests title extraction from a casual message and that 'RSVP by Thursday' becomes an action item."
+}

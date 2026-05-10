@@ -1,0 +1,7 @@
+{
+  "event_type": ["sport"],
+  "start_time": "2026-05-16T09:00:00",
+  "is_all_day": false,
+  "action_items_keywords": ["shin", "boots", "£5"],
+  "notes": "Ad-hoc test case. Frozen today = 2026-05-10 (Sunday); 'next Saturday' resolves to 2026-05-16. Action items: bring shin pads, bring boots, pay £5 entry. Keywords pass whether items are split or merged into one description."
+}

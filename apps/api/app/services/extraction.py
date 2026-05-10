@@ -1,0 +1,180 @@
+import os
+from dataclasses import dataclass
+from datetime import date
+
+import instructor
+from openai import AsyncOpenAI
+
+from app.prompts.extraction import get_prompt
+from app.schemas.events import ExtractResponse, ParentEvent
+
+_PROVIDER_CONFIG = {
+    "ollama": {
+        "base_url": "http://localhost:11434/v1",
+        "api_key_env": None,
+        "default_key": "ollama",
+        "fast_model": "llama3.1:8b",
+        "smart_model": "llama3.1:8b",
+        "mode": "TOOLS",
+    },
+    "groq": {
+        "base_url": "https://api.groq.com/openai/v1",
+        "api_key_env": "GROQ_API_KEY",
+        "default_key": None,
+        # Scout passes the eval reliably in JSON mode and is ~5x cheaper than
+        # 70b. Escalation disabled (smart_model = fast_model) because 70b's
+        # date-disambiguation bug is independent of confidence.
+        "fast_model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "smart_model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "mode": "JSON",
+    },
+    "openai": {
+        "base_url": None,
+        "api_key_env": "OPENAI_API_KEY",
+        "default_key": None,
+        "fast_model": "gpt-4o-mini",
+        "smart_model": "gpt-4o",
+        "mode": "TOOLS",
+    },
+}
+
+
+_clients: dict[tuple[str, str], instructor.AsyncInstructor] = {}
+
+
+def _resolve_mode(name: str | None, provider_default: str | None = None) -> instructor.Mode:
+    name = (
+        name
+        or os.getenv("INSTRUCTOR_MODE")
+        or provider_default
+        or "TOOLS"
+    ).upper()
+    try:
+        return instructor.Mode[name]
+    except KeyError as e:
+        raise ValueError(
+            f"Unknown instructor mode '{name}'. "
+            f"Valid: {[m.name for m in instructor.Mode]}"
+        ) from e
+
+
+def _get_client(provider: str, mode: instructor.Mode) -> instructor.AsyncInstructor:
+    cache_key = (provider, mode.name)
+    if cache_key in _clients:
+        return _clients[cache_key]
+
+    if provider not in _PROVIDER_CONFIG:
+        raise ValueError(f"Unsupported LLM provider: {provider}")
+
+    cfg = _PROVIDER_CONFIG[provider]
+    api_key = (
+        os.getenv(cfg["api_key_env"]) if cfg["api_key_env"] else None
+    ) or cfg["default_key"]
+    if not api_key:
+        raise RuntimeError(
+            f"Missing API key for provider '{provider}'. "
+            f"Set {cfg['api_key_env']} in the environment."
+        )
+
+    openai_client = AsyncOpenAI(base_url=cfg["base_url"], api_key=api_key)
+    client = instructor.from_openai(openai_client, mode=mode)
+    _clients[cache_key] = client
+    return client
+
+
+@dataclass
+class ExtractionRunDetails:
+    """Per-call telemetry the eval consumes; not part of the API response."""
+
+    provider: str
+    model: str
+    prompt_version: str
+    mode: str
+    tokens_used: int
+    prompt_tokens: int
+    completion_tokens: int
+
+
+async def extract_event(
+    raw_text: str,
+    today: date | None = None,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    prompt_version: str | None = None,
+    mode: str | None = None,
+    return_details: bool = False,
+) -> ExtractResponse | tuple[ExtractResponse, ExtractionRunDetails]:
+    """Extract a structured event from raw text.
+
+    Default behavior (no overrides) preserves the production path: pick provider
+    from LLM_PROVIDER, run the fast model, and escalate to smart_model on low
+    confidence.
+
+    Overrides (provider/model/prompt_version) pin the call to a single
+    configuration with no escalation — used by the eval to compare combinations.
+    """
+    today = today or date.today()
+    version, system_prompt = get_prompt(prompt_version)
+
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt.format(
+                today=today.isoformat(),
+                weekday=today.strftime("%A"),
+            ),
+        },
+        {"role": "user", "content": raw_text},
+    ]
+
+    pinned = provider is not None or model is not None
+    resolved_provider = (provider or os.getenv("LLM_PROVIDER", "openai")).lower()
+    cfg = _PROVIDER_CONFIG[resolved_provider]
+    fast_model = model or cfg["fast_model"]
+    smart_model = model or cfg["smart_model"]
+
+    resolved_mode = _resolve_mode(mode, cfg.get("mode"))
+    client = _get_client(resolved_provider, resolved_mode)
+
+    used_model = fast_model
+    event, completion = await client.chat.completions.create_with_completion(
+        model=used_model,
+        response_model=ParentEvent,
+        max_retries=2,
+        messages=messages,
+    )
+    prompt_tokens = completion.usage.prompt_tokens if completion.usage else 0
+    completion_tokens = completion.usage.completion_tokens if completion.usage else 0
+    total_tokens = completion.usage.total_tokens if completion.usage else 0
+
+    if not pinned and event.confidence < 0.7 and fast_model != smart_model:
+        used_model = smart_model
+        event, completion = await client.chat.completions.create_with_completion(
+            model=used_model,
+            response_model=ParentEvent,
+            max_retries=2,
+            messages=messages,
+        )
+        prompt_tokens += completion.usage.prompt_tokens if completion.usage else 0
+        completion_tokens += completion.usage.completion_tokens if completion.usage else 0
+        total_tokens += completion.usage.total_tokens if completion.usage else 0
+
+    response = ExtractResponse(
+        event=event,
+        model_used=used_model,
+        tokens_used=total_tokens,
+    )
+
+    if return_details:
+        details = ExtractionRunDetails(
+            provider=resolved_provider,
+            model=used_model,
+            prompt_version=version,
+            mode=resolved_mode.name,
+            tokens_used=total_tokens,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+        return response, details
+    return response

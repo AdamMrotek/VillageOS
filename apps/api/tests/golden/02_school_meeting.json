@@ -1,0 +1,6 @@
+{
+  "event_type": ["school", "meeting"],
+  "start_date": "2026-06-05",
+  "is_all_day": true,
+  "notes": "Email, all-day event with no time given. event_type accepts 'school' or 'meeting' (parent-teacher conference is both)."
+}

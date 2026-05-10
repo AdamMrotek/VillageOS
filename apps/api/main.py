@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.auth import get_current_user
-from app.routers import events
+from app.routers import events, extract
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
@@ -23,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(events.router)
+app.include_router(extract.router)
 
 
 @app.get("/health")

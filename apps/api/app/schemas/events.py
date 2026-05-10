@@ -96,6 +96,6 @@ class ExtractRequest(BaseModel):
 class ExtractResponse(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
-    event: StoredEvent
+    event: ParentEvent
     model_used: str
     tokens_used: int
