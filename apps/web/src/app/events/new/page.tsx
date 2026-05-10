@@ -99,22 +99,31 @@ export default function NewEventPage() {
     }
   }
 
+  const inputClass =
+    "flex h-9 w-full rounded-md border border-hairline bg-surface px-3 py-1 text-body text-ink shadow-sm placeholder:text-ink-mute focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 p-8">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">New event</h1>
-        <p className="text-sm text-muted-foreground">
-          <Link href="/events" className="underline underline-offset-4">
-            Back to events
+    <main className="mx-auto w-full max-w-5xl space-y-8 px-8 py-10">
+      <header className="space-y-2">
+        <p className="text-eyebrow">
+          <Link
+            href="/events"
+            className="underline-offset-4 hover:text-ink hover:underline"
+          >
+            ← Back to events
           </Link>
         </p>
-      </div>
+        <h1 className="text-title text-ink">New event</h1>
+      </header>
 
-      <div className="grid gap-8 md:grid-cols-2">
-        <section className="space-y-3">
-          <div className="space-y-1">
-            <h2 className="text-sm font-medium">Paste text</h2>
-            <p className="text-xs text-muted-foreground">
+      <div className="line-structural" />
+
+      <div className="grid gap-10 md:grid-cols-2">
+        <section className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-eyebrow-accent">AI extraction</p>
+            <h2 className="text-heading text-ink">Paste text</h2>
+            <p className="text-meta">
               WhatsApp thread, school newsletter, email — anything with an event.
             </p>
           </div>
@@ -125,34 +134,38 @@ export default function NewEventPage() {
             rows={14}
             maxLength={8000}
             placeholder="Reminder from school: Bake Sale this Friday 24th May at 3pm in the school hall. Please bring £2 in a labelled envelope."
-            className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
 
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">{rawText.length} / 8000</span>
+            <span className="text-meta">{rawText.length} / 8000</span>
             <button
               type="button"
               onClick={handleExtract}
               disabled={extracting || rawText.trim().length < 10}
-              className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+              className="inline-flex h-9 items-center justify-center rounded-md bg-accent px-4 py-2 text-body font-medium text-accent-foreground shadow hover:bg-accent-dark disabled:pointer-events-none disabled:opacity-50"
             >
               {extracting ? "Extracting…" : "Extract event →"}
             </button>
           </div>
 
-          {extractError && <p className="text-sm text-destructive">{extractError}</p>}
+          {extractError && <p className="text-body text-destructive">{extractError}</p>}
 
           {meta && (
-            <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-              Model: <span className="font-mono">{meta.model}</span> · Tokens: {meta.tokens} ·
-              Confidence: {(meta.confidence * 100).toFixed(0)}%
+            <div className="space-y-1 rounded-lg border border-accent-soft bg-accent-soft/40 p-3">
+              <p className="text-eyebrow-accent">AI</p>
+              <p className="text-meta text-ink-soft">
+                Model: <span className="font-mono">{meta.model}</span> · Tokens:{" "}
+                <span className="font-mono">{meta.tokens}</span> · Confidence:{" "}
+                <span className="font-mono">{(meta.confidence * 100).toFixed(0)}%</span>
+              </p>
             </div>
           )}
         </section>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label htmlFor="title" className="text-sm font-medium">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-1.5">
+            <label htmlFor="title" className="text-eyebrow">
               Title
             </label>
             <input
@@ -161,19 +174,19 @@ export default function NewEventPage() {
               onChange={(e) => setTitle(e.target.value)}
               required
               maxLength={60}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className={inputClass}
             />
           </div>
 
-          <div className="space-y-1">
-            <label htmlFor="event_type" className="text-sm font-medium">
+          <div className="space-y-1.5">
+            <label htmlFor="event_type" className="text-eyebrow">
               Type
             </label>
             <select
               id="event_type"
               value={eventType}
               onChange={(e) => setEventType(e.target.value as EventType)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className={inputClass}
             >
               {EVENT_TYPES.map((t) => (
                 <option key={t} value={t}>
@@ -184,8 +197,8 @@ export default function NewEventPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label htmlFor="start_time" className="text-sm font-medium">
+            <div className="space-y-1.5">
+              <label htmlFor="start_time" className="text-eyebrow">
                 Starts
               </label>
               <input
@@ -194,12 +207,12 @@ export default function NewEventPage() {
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
                 required
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={inputClass}
               />
             </div>
 
-            <div className="space-y-1">
-              <label htmlFor="end_time" className="text-sm font-medium">
+            <div className="space-y-1.5">
+              <label htmlFor="end_time" className="text-eyebrow">
                 Ends (optional)
               </label>
               <input
@@ -207,34 +220,35 @@ export default function NewEventPage() {
                 type="datetime-local"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={inputClass}
               />
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-body text-ink">
             <input
               type="checkbox"
               checked={isAllDay}
               onChange={(e) => setIsAllDay(e.target.checked)}
+              className="accent-accent"
             />
             All day
           </label>
 
-          <div className="space-y-1">
-            <label htmlFor="location" className="text-sm font-medium">
+          <div className="space-y-1.5">
+            <label htmlFor="location" className="text-eyebrow">
               Location (optional)
             </label>
             <input
               id="location"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className={inputClass}
             />
           </div>
 
-          <div className="space-y-1">
-            <label htmlFor="description" className="text-sm font-medium">
+          <div className="space-y-1.5">
+            <label htmlFor="description" className="text-eyebrow">
               Description (optional)
             </label>
             <textarea
@@ -243,13 +257,15 @@ export default function NewEventPage() {
               onChange={(e) => setDescription(e.target.value)}
               maxLength={120}
               rows={3}
-              className="flex w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
 
+          <div className="line-divider" />
+
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">Action items</label>
+              <label className="text-eyebrow">Action items</label>
               <button
                 type="button"
                 onClick={() =>
@@ -258,19 +274,21 @@ export default function NewEventPage() {
                     { description: "", cost_estimate_gbp: null, urgent: false },
                   ])
                 }
-                className="text-xs text-muted-foreground underline-offset-4 hover:underline"
+                className="text-meta underline-offset-4 hover:text-ink hover:underline"
               >
                 + Add item
               </button>
             </div>
             {actionItems.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No action items.</p>
+              <p className="text-meta">No action items.</p>
             ) : (
               <ul className="space-y-2">
                 {actionItems.map((item, idx) => (
                   <li
                     key={idx}
-                    className="space-y-2 rounded-md border p-2 text-sm"
+                    className={`space-y-2 rounded-md border border-hairline bg-surface p-3 ${
+                      item.urgent ? "line-warm-event" : ""
+                    }`}
                   >
                     <div className="flex items-start gap-2">
                       <input
@@ -283,20 +301,20 @@ export default function NewEventPage() {
                           )
                         }
                         placeholder="Bring £2 in a labelled envelope"
-                        className="flex-1 bg-transparent text-sm focus-visible:outline-none"
+                        className="flex-1 bg-surface text-body text-ink placeholder:text-ink-mute focus-visible:outline-none"
                       />
                       <button
                         type="button"
                         onClick={() =>
                           setActionItems((prev) => prev.filter((_, i) => i !== idx))
                         }
-                        className="text-xs text-muted-foreground hover:text-destructive"
+                        className="text-meta hover:text-destructive"
                       >
                         Remove
                       </button>
                     </div>
                     <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <label className="flex items-center gap-1 text-meta">
                         £
                         <input
                           type="number"
@@ -314,10 +332,10 @@ export default function NewEventPage() {
                             );
                           }}
                           placeholder="cost"
-                          className="h-7 w-24 rounded border border-input bg-transparent px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          className="h-7 w-24 rounded-sm border border-hairline bg-surface px-2 text-meta text-ink placeholder:text-ink-mute focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         />
                       </label>
-                      <label className="flex items-center gap-1 text-xs text-amber-600">
+                      <label className="flex items-center gap-1 text-meta text-warm">
                         <input
                           type="checkbox"
                           checked={item.urgent}
@@ -328,6 +346,7 @@ export default function NewEventPage() {
                               ),
                             )
                           }
+                          className="accent-warm"
                         />
                         urgent
                       </label>
@@ -338,12 +357,12 @@ export default function NewEventPage() {
             )}
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-body text-destructive">{error}</p>}
 
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-body font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
           >
             {loading ? "Creating…" : "Create event"}
           </button>
