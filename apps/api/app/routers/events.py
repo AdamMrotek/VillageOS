@@ -16,3 +16,11 @@ async def create_event(
     db: Client = Depends(get_supabase),
 ):
     return events_service.create_event(db, user["sub"], body)
+
+
+@router.get("", response_model=list[StoredEvent])
+async def list_events(
+    user: dict = Depends(get_current_user),
+    db: Client = Depends(get_supabase),
+):
+    return events_service.list_events(db, user["sub"])

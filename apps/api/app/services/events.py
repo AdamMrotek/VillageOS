@@ -21,3 +21,36 @@ def create_event(db: Client, user_id: str, event: ParentEvent) -> StoredEvent:
         stored_items = db.table("action_items").insert(items_data).execute().data
 
     return StoredEvent.model_validate({**event_row, "action_items": stored_items})
+
+
+def list_events(db: Client, user_id: str) -> list[StoredEvent]:
+    event_rows = (
+        db.table("events")
+        .select("*")
+        .eq("user_id", user_id)
+        .order("start_time", desc=False)
+        .execute()
+        .data
+    )
+    if not event_rows:
+        return []
+
+    event_ids = [row["id"] for row in event_rows]
+    item_rows = (
+        db.table("action_items")
+        .select("*")
+        .in_("event_id", event_ids)
+        .execute()
+        .data
+    )
+
+    items_by_event: dict[str, list[dict]] = {}
+    for item in item_rows:
+        items_by_event.setdefault(item["event_id"], []).append(item)
+
+    return [
+        StoredEvent.model_validate(
+            {**row, "action_items": items_by_event.get(row["id"], [])}
+        )
+        for row in event_rows
+    ]
