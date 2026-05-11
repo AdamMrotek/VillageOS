@@ -20,6 +20,7 @@ class ActionItem(BaseModel):
     description: str
     cost_estimate_gbp: Optional[float] = None
     urgent: bool = False
+    done: bool = False
 
     @field_validator("description")
     @classmethod
@@ -34,6 +35,10 @@ class StoredActionItem(ActionItem):
     model_config = ConfigDict(extra="ignore")
 
     id: str
+
+
+class ActionItemUpdate(BaseModel):
+    done: bool
 
 
 class ParentEvent(BaseModel):

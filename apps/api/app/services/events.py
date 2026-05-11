@@ -1,6 +1,7 @@
+from fastapi import HTTPException
 from supabase import Client
 
-from app.schemas.events import ParentEvent, StoredEvent
+from app.schemas.events import ParentEvent, StoredActionItem, StoredEvent
 
 
 def create_event(db: Client, user_id: str, event: ParentEvent) -> StoredEvent:
@@ -54,3 +55,48 @@ def list_events(db: Client, user_id: str) -> list[StoredEvent]:
         )
         for row in event_rows
     ]
+
+
+def delete_event(db: Client, user_id: str, event_id: str) -> None:
+    deleted = (
+        db.table("events")
+        .delete()
+        .eq("id", event_id)
+        .eq("user_id", user_id)
+        .execute()
+        .data
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+
+def set_action_item_done(
+    db: Client, user_id: str, item_id: str, done: bool
+) -> StoredActionItem:
+    # Service role bypasses RLS, so verify ownership explicitly.
+    item_rows = (
+        db.table("action_items").select("event_id").eq("id", item_id).execute().data
+    )
+    if not item_rows:
+        raise HTTPException(status_code=404, detail="Action item not found")
+
+    event_id = item_rows[0]["event_id"]
+    owner_rows = (
+        db.table("events")
+        .select("id")
+        .eq("id", event_id)
+        .eq("user_id", user_id)
+        .execute()
+        .data
+    )
+    if not owner_rows:
+        raise HTTPException(status_code=404, detail="Action item not found")
+
+    updated = (
+        db.table("action_items")
+        .update({"done": done})
+        .eq("id", item_id)
+        .execute()
+        .data
+    )
+    return StoredActionItem.model_validate(updated[0])

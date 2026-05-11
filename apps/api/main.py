@@ -23,6 +23,7 @@ app.add_middleware(
 )
 
 app.include_router(events.router)
+app.include_router(events.action_items_router)
 app.include_router(extract.router)
 
 

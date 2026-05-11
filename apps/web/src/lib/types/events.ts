@@ -18,6 +18,7 @@ export type ActionItemInput = {
 
 export type ActionItem = ActionItemInput & {
   id: string;
+  done: boolean;
 };
 
 export type ParentEvent = {

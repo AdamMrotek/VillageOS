@@ -29,7 +29,7 @@ export default function NewEventPage() {
   const [rawText, setRawText] = useState("");
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{ model: string; tokens: number; confidence: number } | null>(null);
+  const [meta, setMeta] = useState<{ model: string; tokens: number } | null>(null);
 
   const [title, setTitle] = useState("");
   const [eventType, setEventType] = useState<EventType>("other");
@@ -63,7 +63,7 @@ export default function NewEventPage() {
       setLocation(e.location ?? "");
       setDescription(e.description ?? "");
       setActionItems(e.action_items);
-      setMeta({ model: res.model_used, tokens: res.tokens_used, confidence: e.confidence });
+      setMeta({ model: res.model_used, tokens: res.tokens_used });
     } catch (err) {
       setExtractError(err instanceof Error ? err.message : "Extraction failed");
     } finally {
@@ -88,7 +88,7 @@ export default function NewEventPage() {
           location: location || null,
           description: description || null,
           action_items: actionItems,
-          confidence: meta?.confidence ?? 1.0,
+          confidence: 1.0,
         }),
       });
       router.push("/events");
@@ -100,7 +100,7 @@ export default function NewEventPage() {
   }
 
   const inputClass =
-    "flex h-9 w-full rounded-md border border-hairline bg-surface px-3 py-1 text-body text-ink shadow-sm placeholder:text-ink-mute focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+    "flex h-9 w-full rounded-md border border-hairline bg-surface px-3 py-1 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
   return (
     <main className="mx-auto w-full max-w-5xl space-y-8 px-8 py-10">
@@ -134,7 +134,7 @@ export default function NewEventPage() {
             rows={14}
             maxLength={8000}
             placeholder="Reminder from school: Bake Sale this Friday 24th May at 3pm in the school hall. Please bring £2 in a labelled envelope."
-            className="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            className="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
 
           <div className="flex items-center justify-between">
@@ -156,8 +156,7 @@ export default function NewEventPage() {
               <p className="text-eyebrow-accent">AI</p>
               <p className="text-meta text-ink-soft">
                 Model: <span className="font-mono">{meta.model}</span> · Tokens:{" "}
-                <span className="font-mono">{meta.tokens}</span> · Confidence:{" "}
-                <span className="font-mono">{(meta.confidence * 100).toFixed(0)}%</span>
+                <span className="font-mono">{meta.tokens}</span>
               </p>
             </div>
           )}
@@ -257,7 +256,7 @@ export default function NewEventPage() {
               onChange={(e) => setDescription(e.target.value)}
               maxLength={120}
               rows={3}
-              className="flex w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="flex w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
 
@@ -301,7 +300,7 @@ export default function NewEventPage() {
                           )
                         }
                         placeholder="Bring £2 in a labelled envelope"
-                        className="flex-1 bg-surface text-body text-ink placeholder:text-ink-mute focus-visible:outline-none"
+                        className="flex-1 bg-surface text-body text-ink placeholder:text-ink-mute/60 focus-visible:outline-none"
                       />
                       <button
                         type="button"
@@ -332,7 +331,7 @@ export default function NewEventPage() {
                             );
                           }}
                           placeholder="cost"
-                          className="h-7 w-24 rounded-sm border border-hairline bg-surface px-2 text-meta text-ink placeholder:text-ink-mute focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          className="h-7 w-24 rounded-sm border border-hairline bg-surface px-2 text-meta text-ink placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         />
                       </label>
                       <label className="flex items-center gap-1 text-meta text-warm">
