@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { cn } from "@repo/ui/lib/utils";
 import {
   Sheet,
@@ -9,29 +8,40 @@ import {
   SheetDescription,
   SheetTitle,
 } from "@repo/ui/components/sheet";
-import { apiClient } from "@/lib/api-client";
-import type { ActionItem, StoredEvent } from "@/lib/types/events";
+import type { StoredEvent } from "@/lib/types/events";
 import { formatTime } from "@/lib/utils/date";
+import { useCalendarStore } from "@/lib/stores/calendar-store";
+import {
+  useDeleteEvent,
+  useEvents,
+  useToggleActionItem,
+} from "@/lib/queries/events";
+import ActionItemRow from "@/components/action-item-row";
 
-export default function EventDetailSheet({
-  event,
-  onClose,
-}: {
-  event: StoredEvent | null;
-  onClose: () => void;
-}) {
+export default function EventDetailSheet() {
+  const { data: events = [] } = useEvents();
+  const openEventId = useCalendarStore((s) => s.openEventId);
+  const setOpenEventId = useCalendarStore((s) => s.setOpenEventId);
+  const event = events.find((e) => e.id === openEventId) ?? null;
+
   return (
     <Sheet
       open={!!event}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) setOpenEventId(null);
       }}
     >
       <SheetContent
         side="right"
         className="w-full bg-surface p-0 sm:max-w-md"
       >
-        {event && <EventDetailContent key={event.id} event={event} onClose={onClose} />}
+        {event && (
+          <EventDetailContent
+            key={event.id}
+            event={event}
+            onClose={() => setOpenEventId(null)}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );
@@ -44,12 +54,12 @@ function EventDetailContent({
   event: StoredEvent;
   onClose: () => void;
 }) {
-  const router = useRouter();
-  const [items, setItems] = useState<ActionItem[]>(event.action_items);
-  const [deleting, setDeleting] = useState(false);
+  const toggleMut = useToggleActionItem();
+  const deleteMut = useDeleteEvent();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const items = event.action_items;
   const date = new Date(event.start_time);
   const dayLabel = date.toLocaleDateString("en-GB", {
     weekday: "long",
@@ -60,21 +70,11 @@ function EventDetailContent({
     ? "All day"
     : `${formatTime(event.start_time)}${event.end_time ? ` – ${formatTime(event.end_time)}` : ""}`;
 
-  async function toggleItem(item: ActionItem) {
-    const next = !item.done;
-    setItems((prev) =>
-      prev.map((i) => (i.id === item.id ? { ...i, done: next } : i)),
-    );
+  async function handleToggle(itemId: string, done: boolean) {
     setError(null);
     try {
-      await apiClient(`/api/action_items/${item.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ done: next }),
-      });
+      await toggleMut.mutateAsync({ itemId, done });
     } catch (err) {
-      setItems((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, done: item.done } : i)),
-      );
       setError(err instanceof Error ? err.message : "Could not update item");
     }
   }
@@ -84,19 +84,17 @@ function EventDetailContent({
       setConfirmDelete(true);
       return;
     }
-    setDeleting(true);
     setError(null);
     try {
-      await apiClient(`/api/events/${event.id}`, { method: "DELETE" });
+      await deleteMut.mutateAsync(event.id);
       onClose();
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not delete event");
-      setDeleting(false);
     }
   }
 
   const doneCount = items.filter((i) => i.done).length;
+  const deleting = deleteMut.isPending;
 
   return (
     <div className="flex h-full flex-col">
@@ -143,43 +141,47 @@ function EventDetailContent({
         ) : (
           <ul className="flex flex-col gap-2">
             {items.map((item) => (
-              <ActionRow key={item.id} item={item} onToggle={() => toggleItem(item)} />
+              <ActionItemRow
+                key={item.id}
+                item={item}
+                onToggle={() => handleToggle(item.id, !item.done)}
+              />
             ))}
           </ul>
         )}
       </div>
 
-      <div className="border-t border-hairline bg-background px-6 py-4">
+      <div className="border-t border-hairline bg-background px-6 py-3">
         {error && (
-          <p className="mb-3 text-body text-destructive">{error}</p>
+          <p className="mb-2 text-meta text-destructive">{error}</p>
         )}
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={deleting}
-          className={cn(
-            "inline-flex h-9 w-full items-center justify-center rounded-md px-4 text-body font-medium transition-colors",
-            confirmDelete
-              ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              : "border border-hairline bg-surface text-ink-soft hover:border-destructive hover:text-destructive",
-            "disabled:pointer-events-none disabled:opacity-50",
-          )}
-        >
-          {deleting
-            ? "Deleting…"
-            : confirmDelete
-              ? "Confirm delete"
-              : "Delete event"}
-        </button>
-        {confirmDelete && !deleting && (
+        <div className="flex items-center justify-between gap-2">
           <button
             type="button"
-            onClick={() => setConfirmDelete(false)}
-            className="mt-2 w-full text-center text-meta underline-offset-4 hover:underline"
+            onClick={handleDelete}
+            disabled={deleting}
+            className={cn(
+              "inline-flex h-7 items-center justify-center rounded-sm border px-3 text-[11px] font-medium transition-colors",
+              confirmDelete
+                ? "border-destructive bg-destructive/10 text-destructive hover:bg-destructive/20"
+                : "border-hairline text-ink-mute hover:border-destructive hover:text-destructive",
+              "disabled:pointer-events-none disabled:opacity-50",
+            )}
           >
-            Cancel
+            {deleting
+              ? "Deleting…"
+              : confirmDelete
+                ? "Confirm delete"
+                : "Delete"}
           </button>
-        )}
+          <button
+            type="button"
+            onClick={confirmDelete && !deleting ? () => setConfirmDelete(false) : onClose}
+            className="inline-flex h-7 items-center justify-center rounded-sm border border-hairline px-3 text-[11px] font-medium text-ink-soft transition-colors hover:bg-surface-alt hover:text-ink"
+          >
+            {confirmDelete && !deleting ? "Cancel" : "Close"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -197,54 +199,5 @@ function Field({
       <div className="mb-1 text-eyebrow">{label}</div>
       {children}
     </div>
-  );
-}
-
-function ActionRow({
-  item,
-  onToggle,
-}: {
-  item: ActionItem;
-  onToggle: () => void;
-}) {
-  return (
-    <li
-      className={cn(
-        "rounded-md border border-hairline bg-surface p-3 transition-colors",
-        item.urgent && !item.done && "border-l-2 border-l-warm",
-        item.done && "opacity-60",
-      )}
-    >
-      <label className="flex cursor-pointer items-start gap-3">
-        <input
-          type="checkbox"
-          checked={item.done}
-          onChange={onToggle}
-          className="mt-0.5 size-4 accent-accent"
-        />
-        <span className="flex-1">
-          <span
-            className={cn(
-              "block text-body text-ink",
-              item.done && "line-through",
-            )}
-          >
-            {item.description}
-          </span>
-          <span className="mt-1 flex items-center gap-2 text-meta">
-            {item.cost_estimate_gbp != null && (
-              <span className="font-mono text-ink-mute">
-                £{item.cost_estimate_gbp.toFixed(0)}
-              </span>
-            )}
-            {item.urgent && !item.done && (
-              <span className="rounded-sm bg-warm px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-surface">
-                Urgent
-              </span>
-            )}
-          </span>
-        </span>
-      </label>
-    </li>
   );
 }

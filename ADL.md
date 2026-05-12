@@ -117,3 +117,25 @@ SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 **See also:** [DATABASE.md](DATABASE.md)
 
 ---
+
+## ADR-008 — TanStack Query for server data; Zustand for UI state only
+
+**Decision:** Server data fetched from FastAPI is owned by TanStack Query in `apps/web/src/lib/queries/`. Zustand (`apps/web/src/lib/stores/calendar-store.ts`) holds only ephemeral UI state — `weekAnchor` and `openEventId`. Per-user authed pages do **not** use SSR data fetching; they render as RSC shells and let the client fetch.
+
+**Reasons:**
+- **Auth lives between client and FastAPI.** SSR would require an extra Browser→Next→FastAPI hop with no caching benefit.
+- **TanStack Query replaces hand-rolled state plumbing.** Cache, request deduping, refetch-on-focus, optimistic updates with rollback, and centralised invalidation come for free. This removes the `router.refresh()` + store re-hydration dance.
+- **Keeping server data out of Zustand prevents staleness bugs.**
+- **Zustand still earns its keep for UI state** that isn't reachable via a URL or query key (selected event, active week anchor), where the cross-component coordination that a global store provides is exactly the point.
+
+**Tradeoffs:**
+- Brief loading state on first paint instead of pre-populated HTML — acceptable for a logged-in app with no SEO requirement.
+- ~13 kB gzipped added to the client bundle for `@tanstack/react-query`.
+
+**Impact:**
+- `/events` page is a pure RSC shell with no `apiServer` call.
+- `QueryClientProvider` mounted once in `apps/web/src/app/(app)/layout.tsx`.
+- `useEvents`, `useToggleActionItem`, `useDeleteEvent` defined in `apps/web/src/lib/queries/events.ts`.
+- `apps/web/src/lib/api-server.ts` and the `events-provider.tsx` hydrator removed; the previous server-fetched + Zustand-hydrated path is gone.
+
+---

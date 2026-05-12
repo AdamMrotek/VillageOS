@@ -131,10 +131,16 @@
   }
   .text-title {
     font-family: var(--font-display);
-    font-size: 30px;
-    line-height: 1.15;
+    font-size: 22px;
+    line-height: 1.2;
     font-weight: 400;
     letter-spacing: -0.015em;
+  }
+  @media (min-width: theme(--breakpoint-sm)) {
+    .text-title {
+      font-size: 30px;
+      line-height: 1.15;
+    }
   }
   .text-heading {
     font-family: var(--font-display);

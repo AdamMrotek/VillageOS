@@ -1,4 +1,5 @@
 import TopNav from "@/components/nav/top-nav";
+import QueryProvider from "@/components/query-provider";
 
 export default function AppLayout({
   children,
@@ -6,9 +7,9 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <>
+    <QueryProvider>
       <TopNav />
       {children}
-    </>
+    </QueryProvider>
   );
 }

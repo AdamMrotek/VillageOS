@@ -17,7 +17,7 @@ export default function PageLayout({
   children,
 }: PageLayoutProps) {
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-8 py-10">
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-10 md:px-8">
       <header className="space-y-2">
         <p className="text-eyebrow min-h-[1.25rem]">
           {backHref ? (
