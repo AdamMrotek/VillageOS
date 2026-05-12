@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { apiClient } from "@/lib/api-client";
 import {
   EVENT_TYPES,
@@ -10,6 +9,7 @@ import {
   type EventType,
   type ExtractResponse,
 } from "@/lib/types/events";
+import PageLayout from "@/components/page-layout";
 
 function toIsoOrNull(value: string): string | null {
   if (!value) return null;
@@ -103,21 +103,7 @@ export default function NewEventPage() {
     "flex h-9 w-full rounded-md border border-hairline bg-surface px-3 py-1 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-8 px-8 py-10">
-      <header className="space-y-2">
-        <p className="text-eyebrow">
-          <Link
-            href="/events"
-            className="underline-offset-4 hover:text-ink hover:underline"
-          >
-            ← Back to events
-          </Link>
-        </p>
-        <h1 className="text-title text-ink">New event</h1>
-      </header>
-
-      <div className="line-structural" />
-
+    <PageLayout title="New event" backHref="/events" backLabel="Back to events">
       <div className="grid gap-10 md:grid-cols-2">
         <section className="space-y-4">
           <div className="space-y-2">
@@ -367,6 +353,6 @@ export default function NewEventPage() {
           </button>
         </form>
       </div>
-    </main>
+    </PageLayout>
   );
 }
