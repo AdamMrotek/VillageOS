@@ -10,10 +10,30 @@ Supabase (managed PostgreSQL). Acts as both the auth provider and the primary da
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `SUPABASE_URL` | `apps/api/.env` | REST / auth base URL |
+| `SUPABASE_URL` | `apps/api/.env` | REST / auth base URL — also used to fetch JWKS public keys for JWT verification |
 | `SUPABASE_SERVICE_ROLE_KEY` | `apps/api/.env` | Server-side DB writes (bypasses RLS) |
 | `NEXT_PUBLIC_SUPABASE_URL` | `apps/web/.env` | Client-side Supabase URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/web/.env` | Client-side anon key |
+
+> **No shared JWT secret.** VillageOS uses Supabase's **asymmetric JWT signing** (RS256/ES256), not the legacy HS256 shared-secret flow. See [Authentication](#authentication) below.
+
+---
+
+## Authentication
+
+The FastAPI service verifies Supabase access tokens **asymmetrically**:
+
+1. Supabase signs every user JWT with its private RS256/ES256 key.
+2. On first request after cold start, `PyJWKClient` fetches the matching public keys from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` and caches them in memory.
+3. Each protected request: extract the bearer token, look up the signing key by `kid`, verify against the cached public key.
+
+Why this matters:
+
+- **No `SUPABASE_JWT_SECRET` env var needed.** The server only needs the public URL — the private key never leaves Supabase. Rotating the signing key on Supabase's side requires no redeploy.
+- **`SUPABASE_URL` is therefore load-bearing for auth**, not just for REST calls. If it's missing or wrong at cold start, every authenticated request fails.
+- This is the modern Supabase auth flow (rolled out 2024). Older tutorials and the legacy Supabase Python SDK examples still show the HS256 + shared secret pattern — ignore those for this codebase.
+
+Implementation: `apps/api/app/core/auth.py`.
 
 ---
 

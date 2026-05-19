@@ -139,3 +139,37 @@ SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 - `apps/web/src/lib/api-server.ts` and the `events-provider.tsx` hydrator removed; the previous server-fetched + Zustand-hydrated path is gone.
 
 ---
+
+## ADR-009 — AWS Lambda + API Gateway (HTTP API) via SAM for the FastAPI backend
+
+**Decision:** Deploy `apps/api` as a single AWS Lambda function fronted by API Gateway HTTP API, packaged and shipped with AWS SAM. FastAPI runs inside Lambda through the [Mangum](https://github.com/jordaneremieff/mangum) ASGI adapter (`apps/api/lambda_handler.py`). Infrastructure is declared in `apps/api/template.yaml`.
+
+**Reasons:**
+- **Cost at idle is effectively zero.** Lambda + HTTP API have generous free tiers and bill per request; the app has no traffic floor to amortise a container or VM against.
+- **HTTP API over REST API.** Cheaper per request, lower latency, and the feature set (JWT-friendly routing, CORS, throttling) covers everything the FastAPI service needs. The REST API tier's extra features (request validation, API keys, usage plans) are not in scope.
+- **Mangum keeps FastAPI unchanged.** The same `main.py` runs locally under Uvicorn and in Lambda — no framework swap, no handler-per-route rewrite. A single proxy route (`/{proxy+}` ANY) hands every request to FastAPI's router.
+- **SAM over raw CloudFormation or CDK.** `sam build` + `sam deploy --guided` gives a one-command path from source to deployed stack, with `samconfig.toml` capturing parameters for subsequent deploys. CDK would add a TypeScript/Python build step in the infra layer for no benefit at this size.
+- **arm64 (Graviton) runtime.** ~20% cheaper than x86_64 and ~20% faster for Python workloads; no compatibility issues for this dependency set.
+
+**Cost guards (intentional, declared in `template.yaml`):**
+- **HTTP API throttle:** `$default` route capped at 5 req/sec sustained, 10 burst across the whole API. Stops a runaway client or scraper from generating a surprise bill before any application-level rate limiting is in place.
+- **CloudWatch log retention:** 7 days on `/aws/lambda/${ApiFunction}` so log storage stays inside the free tier.
+- **Reserved concurrency deliberately omitted.** Setting it would require raising the account-level concurrency quota above 10; the upstream HTTP API throttle is the real ceiling.
+- **Billing alert** set in the AWS console before first deploy (called out in [BACKEND.md](BACKEND.md#prerequisites)).
+
+**Function sizing:**
+- `MemorySize: 1024` MB — enough headroom for JWKS fetch + PyJWT verification on cold start without paying for memory the steady state doesn't use.
+- `Timeout: 30` s — comfortably above worst-case LLM extraction latency; API Gateway HTTP API caps integration timeout at 30 s anyway.
+
+**Tradeoffs:**
+- **Cold starts.** Python on Lambda typically adds 300–800 ms on a cold invocation, plus the first-ever JWKS fetch. Acceptable for a logged-in app with no SEO surface; revisit with provisioned concurrency or SnapStart if user-facing latency becomes a complaint.
+- **Vendor lock-in on the deploy surface.** `template.yaml` and the Mangum entrypoint are AWS-specific. The FastAPI app itself stays portable — moving to Fly/Render/Fargate would mean a new IaC file and dropping `lambda_handler.py`, not a code rewrite.
+- **Secrets live in Lambda env vars.** Fine for the current threat model; migrate to AWS Secrets Manager or SSM Parameter Store if/when rotation or multi-environment promotion warrants it.
+
+**Impact:**
+- `apps/api/lambda_handler.py` is the Lambda entry; `main.py` remains the local-dev entry.
+- `mangum` is a runtime dependency in `apps/api/requirements.txt`.
+- Frontend points at the SAM output `ApiUrl` via `NEXT_PUBLIC_API_URL`.
+- See [BACKEND.md](BACKEND.md#deploying-to-aws-lambda) for the deploy runbook.
+
+---

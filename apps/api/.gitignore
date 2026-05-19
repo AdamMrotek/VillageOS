@@ -5,3 +5,8 @@ __pycache__/
 venv/
 dist/
 *.egg-info/
+
+# AWS SAM
+.aws-sam/
+samconfig.toml
+packaged.yaml

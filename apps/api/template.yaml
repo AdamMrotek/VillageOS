@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: VillageOS FastAPI service on Lambda + API Gateway
+
+Parameters:
+  SupabaseUrl:
+    Type: String
+  SupabaseServiceRoleKey:
+    Type: String
+    NoEcho: true
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+  GroqApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+  LlmProvider:
+    Type: String
+    Default: openai
+    AllowedValues: [openai, groq]
+  AllowedOrigins:
+    Type: String
+    Default: http://localhost:3000
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 1024
+    Runtime: python3.12
+    Architectures: [arm64]
+  HttpApi:
+    # Cost guard: cap requests at 5/sec sustained, 10 burst across the whole API
+    RouteSettings:
+      '$default':
+        ThrottlingBurstLimit: 10
+        ThrottlingRateLimit: 5
+
+Resources:
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: lambda_handler.handler
+      # Cost guard is enforced upstream by the HttpApi throttle (5 req/sec, 10 burst).
+      # ReservedConcurrentExecutions would require an account-level concurrency quota > 10.
+      Environment:
+        Variables:
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
+          OPENAI_API_KEY: !Ref OpenAiApiKey
+          GROQ_API_KEY: !Ref GroqApiKey
+          LLM_PROVIDER: !Ref LlmProvider
+          ALLOWED_ORIGINS: !Ref AllowedOrigins
+      Events:
+        ApiRoot:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: ANY
+        ApiProxy:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+
+  # Cost guard: cap log retention to 7 days so CloudWatch storage stays in free tier
+  ApiFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
+      RetentionInDays: 7
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the deployed API
+    Value: !Sub 'https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com'
+  FunctionName:
+    Description: Lambda function name
+    Value: !Ref ApiFunction
