@@ -5,7 +5,9 @@ Description: VillageOS FastAPI service on Lambda + API Gateway
 Parameters:
   SupabaseUrl:
     Type: String
-  SupabaseServiceRoleKey:
+  SupabasePublishableKey:
+    Type: String
+  SupabaseSecretKey:
     Type: String
     NoEcho: true
   OpenAiApiKey:
@@ -48,7 +50,8 @@ Resources:
       Environment:
         Variables:
           SUPABASE_URL: !Ref SupabaseUrl
-          SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
+          SUPABASE_PUBLISHABLE_KEY: !Ref SupabasePublishableKey
+          SUPABASE_SECRET_KEY: !Ref SupabaseSecretKey
           OPENAI_API_KEY: !Ref OpenAiApiKey
           GROQ_API_KEY: !Ref GroqApiKey
           LLM_PROVIDER: !Ref LlmProvider

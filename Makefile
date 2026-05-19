@@ -4,7 +4,7 @@ frontend:
 	cd apps/web && pnpm dev
 
 backend:
-	cd apps/api && uvicorn main:app --reload
+	cd apps/api && . .venv/bin/activate && uvicorn main:app --reload
 
 be-reload:
 	-lsof -ti :8000 | xargs kill -9 2>/dev/null || true

@@ -33,7 +33,9 @@ model-backed endpoint observable in production.
 
 - **Typed end-to-end across two languages.** Pydantic v2 schemas on the
   API mirror TypeScript types on the web; a Supabase JWT bridges
-  `@supabase/ssr` cookies on Next.js and `PyJWT` (HS256) on FastAPI.
+  `@supabase/ssr` cookies on Next.js and `PyJWT` (asymmetric RS256/ES256
+  via JWKS) on FastAPI, with RLS enforced via a JWT-scoped Supabase
+  client.
 - **Structured LLM output, not vibes.** `instructor` + Pydantic enforces
   the `ParentEvent` contract (title, type, start_time, action_items,
   confidence, source_text) on every extraction.

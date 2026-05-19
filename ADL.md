@@ -90,16 +90,18 @@ apps/api/
 
 **Impact:**
 - `apps/web` uses `@supabase/ssr` + `@supabase/supabase-js` for session management via server-side cookies
-- `apps/api` (FastAPI) verifies Supabase JWTs using `PyJWT` with HS256 and `SUPABASE_JWT_SECRET`
+- `apps/api` (FastAPI) verifies Supabase JWTs **asymmetrically** via `PyJWT` + JWKS fetched from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json` (see ADR-010)
 
 **Required env vars:**
 ```
 # apps/web/.env.local
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
 
 # apps/api/.env
-SUPABASE_JWT_SECRET=your-supabase-jwt-secret
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+SUPABASE_SECRET_KEY=sb_secret_...
 ```
 
 ---
@@ -111,7 +113,7 @@ SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 **Reasons:**
 - **Layered structure:** Flat files (`main.py`, `auth.py`, `schemas.py`) become unmanageable as routes multiply. Separating HTTP handling (routers), business logic (services), data shapes (schemas), and shared dependencies (core) keeps each file focused and testable in isolation.
 - **JSONB for `action_items`:** Action items are always read and written with their parent event, never queried independently. JSONB avoids a join table while preserving full structure — Pydantic validates the shape on both read and write.
-- **RLS over application-level filtering:** Enabling Row Level Security on `events` means a misconfigured query cannot accidentally expose another user's data. The API uses the service role key but sets `user_id` explicitly; the RLS policy acts as a safety net.
+- **RLS over application-level filtering:** Enabling Row Level Security on `events` means a misconfigured query cannot accidentally expose another user's data. (Originally the API used the service role key with `user_id` set explicitly and RLS as a backstop; superseded by ADR-010 — user routes now go through a JWT-scoped client and RLS is load-bearing.)
 - **`confidence` column on manual events:** Set to `1.0` for events created directly by the user; populated by the AI extraction pipeline for text-derived events. Allows the frontend to surface low-confidence extractions for review without a separate table.
 
 **See also:** [DATABASE.md](DATABASE.md)
@@ -171,5 +173,15 @@ SUPABASE_JWT_SECRET=your-supabase-jwt-secret
 - `mangum` is a runtime dependency in `apps/api/requirements.txt`.
 - Frontend points at the SAM output `ApiUrl` via `NEXT_PUBLIC_API_URL`.
 - See [BACKEND.md](BACKEND.md#deploying-to-aws-lambda) for the deploy runbook.
+
+---
+
+## ADR-010 — JWT-scoped Supabase client; RLS is load-bearing
+
+**Decision:** User routes go through `get_user_db` — a per-request Supabase client built with the publishable key and authenticated with the caller's JWT — so queries run as that user and existing `auth.uid() = user_id` policies enforce ownership at the DB. Service-role access (`get_admin_db`, secret key) is reserved for admin paths (cron, AI ingestion).
+
+**Why:** under the previous service-role-everywhere setup, a forgotten `.eq("user_id", ...)` was a data leak; now Postgres applies the filter and service code shrinks (e.g. `set_action_item_done` went from ~30 lines to 6). `INSERT`s must still set `user_id` for the `WITH CHECK` clause to pass.
+
+**Supersedes** the RLS-as-safety-net framing in ADR-007. See [BACKEND.md](BACKEND.md#database-access-pattern).
 
 ---

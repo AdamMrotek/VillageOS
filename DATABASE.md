@@ -11,9 +11,12 @@ Supabase (managed PostgreSQL). Acts as both the auth provider and the primary da
 | Variable | Where | Purpose |
 |---|---|---|
 | `SUPABASE_URL` | `apps/api/.env` | REST / auth base URL — also used to fetch JWKS public keys for JWT verification |
-| `SUPABASE_SERVICE_ROLE_KEY` | `apps/api/.env` | Server-side DB writes (bypasses RLS) |
+| `SUPABASE_PUBLISHABLE_KEY` | `apps/api/.env` | `sb_publishable_...` — base key for per-request, JWT-scoped clients in user routes; RLS enforced |
+| `SUPABASE_SECRET_KEY` | `apps/api/.env` | `sb_secret_...` — server-only, bypasses RLS. Reserved for admin paths |
 | `NEXT_PUBLIC_SUPABASE_URL` | `apps/web/.env` | Client-side Supabase URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/web/.env` | Client-side anon key |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `apps/web/.env` | Client-side publishable key (env var name kept as `ANON_KEY` for `@supabase/ssr` ergonomics) |
+
+> **New API key format.** VillageOS uses Supabase's [new `sb_publishable_` / `sb_secret_` key format](https://supabase.com/docs/guides/getting-started/api-keys), not the legacy `anon` / `service_role` JWT keys. The new secret key returns HTTP 401 if accidentally used in a browser.
 
 > **No shared JWT secret.** VillageOS uses Supabase's **asymmetric JWT signing** (RS256/ES256), not the legacy HS256 shared-secret flow. See [Authentication](#authentication) below.
 
@@ -68,7 +71,7 @@ Stores calendar events belonging to a user. Created by `supabase/migrations/2026
 | `confidence` | `float` | 0–1, populated by AI extraction or set to `1.0` for manual entries |
 | `created_at` | `timestamptz` | Auto-set to `NOW()` |
 
-**Row-level security:** enabled. The `users_own_events` policy restricts all operations to rows where `auth.uid() = user_id`. The API uses the service role key and passes `user_id` explicitly, so RLS is enforced at the policy level.
+**Row-level security:** enabled and **load-bearing**. The `users_own_events` policy restricts all operations to rows where `auth.uid() = user_id`. User routes go through `get_user_db` in `apps/api/app/core/db.py`, which builds a per-request Supabase client scoped to the caller's JWT — so every query runs as that user and RLS does the filtering. Service-layer code does not add `.eq("user_id", ...)` filters; forgetting one is no longer a leak. `INSERT`s must still include `user_id` for the policy's `WITH CHECK` clause to pass. The secret-key client (`get_admin_db`) bypasses RLS and is reserved for admin paths.
 
 ---
 

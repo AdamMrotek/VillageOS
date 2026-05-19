@@ -2,7 +2,7 @@
 
 ## Environment variables
 
-Copy the example file and fill in the Supabase keys from **Supabase dashboard → Project Settings → API**:
+Copy the example file and fill in the Supabase keys from **Supabase dashboard → Project Settings → API Keys**:
 
 ```bash
 cp apps/web/.env.local.example apps/web/.env.local
@@ -11,7 +11,7 @@ cp apps/web/.env.local.example apps/web/.env.local
 | Variable | Description |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable key (`sb_publishable_...`); env var name kept as `ANON_KEY` for `@supabase/ssr` ergonomics |
 | `NEXT_PUBLIC_API_URL` | Base URL of the FastAPI backend (e.g. `http://localhost:8000`) |
 
 ---
