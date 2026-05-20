@@ -7,6 +7,8 @@ from openai import AsyncOpenAI
 
 from app.prompts.extraction import get_prompt
 from app.schemas.events import ExtractResponse, ParentEvent
+from app.schemas.extraction_draft import ParentEventDraft
+from app.services.extraction_date import build_date_table, draft_to_event
 
 _PROVIDER_CONFIG = {
     "ollama": {
@@ -95,6 +97,31 @@ class ExtractionRunDetails:
     completion_tokens: int
 
 
+async def _extract_once(
+    client: instructor.AsyncInstructor,
+    model: str,
+    messages: list[dict],
+    version: str,
+    today: date,
+) -> tuple[ParentEvent, object]:
+    """Single LLM call. For v3, ask for ParentEventDraft and combine into ParentEvent."""
+    if version == "v3":
+        draft, completion = await client.chat.completions.create_with_completion(
+            model=model,
+            response_model=ParentEventDraft,
+            max_retries=2,
+            messages=messages,
+        )
+        return draft_to_event(draft), completion
+    event, completion = await client.chat.completions.create_with_completion(
+        model=model,
+        response_model=ParentEvent,
+        max_retries=2,
+        messages=messages,
+    )
+    return event, completion
+
+
 async def extract_event(
     raw_text: str,
     today: date | None = None,
@@ -123,6 +150,7 @@ async def extract_event(
             "content": system_prompt.format(
                 today=today.isoformat(),
                 weekday=today.strftime("%A"),
+                date_table=build_date_table(today),
             ),
         },
         {"role": "user", "content": raw_text},
@@ -138,24 +166,14 @@ async def extract_event(
     client = _get_client(resolved_provider, resolved_mode)
 
     used_model = fast_model
-    event, completion = await client.chat.completions.create_with_completion(
-        model=used_model,
-        response_model=ParentEvent,
-        max_retries=2,
-        messages=messages,
-    )
+    event, completion = await _extract_once(client, used_model, messages, version, today)
     prompt_tokens = completion.usage.prompt_tokens if completion.usage else 0
     completion_tokens = completion.usage.completion_tokens if completion.usage else 0
     total_tokens = completion.usage.total_tokens if completion.usage else 0
 
     if not pinned and event.confidence < 0.7 and fast_model != smart_model:
         used_model = smart_model
-        event, completion = await client.chat.completions.create_with_completion(
-            model=used_model,
-            response_model=ParentEvent,
-            max_retries=2,
-            messages=messages,
-        )
+        event, completion = await _extract_once(client, used_model, messages, version, today)
         prompt_tokens += completion.usage.prompt_tokens if completion.usage else 0
         completion_tokens += completion.usage.completion_tokens if completion.usage else 0
         total_tokens += completion.usage.total_tokens if completion.usage else 0

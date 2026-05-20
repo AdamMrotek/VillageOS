@@ -1,4 +1,4 @@
-.PHONY: frontend backend be-reload docker seed
+.PHONY: frontend backend be-reload docker seed eval
 
 frontend:
 	cd apps/web && pnpm dev
@@ -9,3 +9,6 @@ backend:
 be-reload:
 	-lsof -ti :8000 | xargs kill -9 2>/dev/null || true
 	cd apps/api && . .venv/bin/activate && uvicorn main:app --reload
+
+eval:
+	cd apps/eval-viewer && pnpm dev

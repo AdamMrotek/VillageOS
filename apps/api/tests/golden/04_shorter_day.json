@@ -1,0 +1,7 @@
+{
+  "event_type": ["school"],
+  "start_time": "2026-05-15T12:00:00",
+  "is_all_day": false,
+  "action_items_keywords": [["collect", "pickup"]],
+  "notes": "Tests relative weekday resolution with no explicit calendar date. Frozen today = 2026-05-10 (Sunday); 'Friday' resolves to 2026-05-15. Pickup at noon — short message typical of class WhatsApp reminders."
+}

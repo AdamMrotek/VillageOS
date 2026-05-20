@@ -48,7 +48,7 @@ class ParentEvent(BaseModel):
     end_time: Optional[datetime] = None
     is_all_day: bool         = False
     location: Optional[str]  = None
-    description: Optional[str] = Field(None, description="One sentence summary, max 120 chars")
+    description: Optional[str] = Field(None, description="Up to a few sentences, max 240 chars")
     action_items: list[ActionItem] = []
     confidence: float        = Field(..., ge=0.0, le=1.0, description="Extraction confidence, 0 to 1")
 
@@ -68,8 +68,8 @@ class ParentEvent(BaseModel):
         if v is None:
             return v
         v = v.strip()
-        if len(v) > 120:
-            raise ValueError("description must be 120 characters or fewer")
+        if len(v) > 240:
+            raise ValueError("description must be 240 characters or fewer")
         return v or None
 
     @field_validator("start_time")

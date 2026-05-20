@@ -36,10 +36,18 @@ load_dotenv()
 
 from app.prompts.extraction import VERSIONS as PROMPT_VERSIONS
 from app.services.extraction import ExtractionRunDetails, extract_event
+from evals.extraction.grader import (
+    GRADER_MODEL,
+    GRADER_PROVIDER,
+    GraderRunDetails,
+    GraderVerdict,
+    grade_case,
+)
+from evals.extraction.storage import append_rows, new_run_id
 
 API_ROOT = Path(__file__).resolve().parents[2]  # .../apps/api
 GOLDEN_DIR = API_ROOT / "tests/golden"
-RESULTS_PATH = API_ROOT / "evals/extraction/results.md"
+JSONL_PATH = API_ROOT / "evals/extraction/results.jsonl"
 
 FROZEN_TODAY = date(2026, 5, 10)
 START_TIME_TOLERANCE = timedelta(minutes=30)
@@ -107,6 +115,9 @@ class CaseResult:
     event_dump: dict | None
     error: str | None
     checks: list[FieldCheck] = field(default_factory=list)
+    grader: GraderVerdict | None = None
+    grader_details: GraderRunDetails | None = None
+    grader_error: str | None = None
 
     @property
     def all_passed(self) -> bool:
@@ -173,6 +184,17 @@ def evaluate_case(case: GoldenCase, event: Any) -> list[FieldCheck]:
                 actual_date == expected_date,
             )
         )
+        if "end_date" in expected:
+            expected_end_date = date.fromisoformat(expected["end_date"])
+            actual_end_date = event.end_time.date() if event.end_time else None
+            checks.append(
+                _check(
+                    "end_date",
+                    expected_end_date.isoformat(),
+                    actual_end_date.isoformat() if actual_end_date else "<none>",
+                    actual_end_date == expected_end_date,
+                )
+            )
     else:
         expected_start = datetime.fromisoformat(expected["start_time"])
         actual_start = event.start_time.replace(tzinfo=None)
@@ -185,17 +207,41 @@ def evaluate_case(case: GoldenCase, event: Any) -> list[FieldCheck]:
                 delta <= START_TIME_TOLERANCE,
             )
         )
+        if "end_time" in expected:
+            expected_end = datetime.fromisoformat(expected["end_time"])
+            actual_end = event.end_time.replace(tzinfo=None) if event.end_time else None
+            end_delta = abs(actual_end - expected_end) if actual_end else None
+            checks.append(
+                _check(
+                    "end_time",
+                    f"{expected_end.isoformat()} (±{int(START_TIME_TOLERANCE.total_seconds() // 60)}m)",
+                    actual_end.isoformat() if actual_end else "<none>",
+                    end_delta is not None and end_delta <= START_TIME_TOLERANCE,
+                )
+            )
 
     if "action_items_keywords" in expected:
         joined = " | ".join(item.description for item in event.action_items).lower()
         keywords = expected["action_items_keywords"]
-        missing = [kw for kw in keywords if kw.lower() not in joined]
+
+        def _matches(spec: Any) -> bool:
+            # A list spec is an OR-group: any one substring satisfies it.
+            if isinstance(spec, list):
+                return any(alt.lower() in joined for alt in spec)
+            return spec.lower() in joined
+
+        def _fmt(spec: Any) -> str:
+            if isinstance(spec, list):
+                return "(" + "|".join(spec) + ")"
+            return repr(spec)
+
+        missing = [spec for spec in keywords if not _matches(spec)]
         checks.append(
             _check(
                 "action_items_keywords",
-                f"all of: {keywords}",
+                "all of: " + ", ".join(_fmt(s) for s in keywords),
                 f"got: {joined or '<none>'}"
-                + (f" — missing: {missing}" if missing else ""),
+                + (f" — missing: {[_fmt(s) for s in missing]}" if missing else ""),
                 not missing,
             )
         )
@@ -267,39 +313,131 @@ def fmt_cost(value: float | None) -> str:
     return f"${value * 1000:.4f}/1k"
 
 
+def _checks_to_dicts(checks: list[FieldCheck]) -> list[dict]:
+    return [
+        {
+            "name": c.name,
+            "expected": c.expected if isinstance(c.expected, (str, int, float, bool, list, dict)) else str(c.expected),
+            "actual": c.actual if isinstance(c.actual, (str, int, float, bool, list, dict)) else str(c.actual),
+            "passed": c.passed,
+        }
+        for c in checks
+    ]
+
+
+async def grade_results(
+    results: list[CaseResult],
+    cases_by_id: dict[str, GoldenCase],
+) -> None:
+    """Mutate results in place, attaching grader verdicts.
+
+    Runs sequentially to keep grader rate-limiting predictable and the cost
+    column truthful (each grade is one independent call).
+    """
+    for r in results:
+        try:
+            verdict, details = await grade_case(
+                raw_text=cases_by_id[r.case_id].raw_text,
+                expected=cases_by_id[r.case_id].expected,
+                actual_event=r.event_dump,
+                extraction_error=r.error,
+            )
+            r.grader = verdict
+            r.grader_details = details
+            mark = "⚠" if r.error else ("✓" if r.all_passed else "✗")
+            print(
+                f"     [grader] {mark} {r.provider}/{r.model} · {r.case_id}: "
+                f"score {verdict.score}/10"
+            )
+        except Exception as exc:
+            r.grader_error = f"{type(exc).__name__}: {exc}"
+            print(
+                f"     [grader] ⚠ {r.provider}/{r.model} · {r.case_id}: failed — {r.grader_error}"
+            )
+
+
+def result_to_row(r: CaseResult, run_id: str, expected: dict) -> dict:
+    rule_checks = _checks_to_dicts(r.checks)
+    rule_pass = sum(1 for c in rule_checks if c["passed"])
+    extraction_cost = cost_usd(r.provider, r.model, r.details)
+    return {
+        "run_id": run_id,
+        "case_id": r.case_id,
+        "provider": r.provider,
+        "model": r.model,
+        "prompt_version": r.prompt_version,
+        "frozen_today": FROZEN_TODAY.isoformat(),
+        "expected": expected,
+        "actual_event": r.event_dump,
+        "rule_checks": rule_checks,
+        "rule_pass_count": rule_pass,
+        "rule_total": len(rule_checks),
+        "rule_all_passed": r.all_passed,
+        "latency_s": round(r.duration_s, 3),
+        "tokens_used": r.details.tokens_used if r.details else None,
+        "prompt_tokens": r.details.prompt_tokens if r.details else None,
+        "completion_tokens": r.details.completion_tokens if r.details else None,
+        "instructor_mode": r.details.mode if r.details else None,
+        "extraction_cost_usd": extraction_cost,
+        "error": r.error,
+        "grader": (
+            {
+                "model": r.grader_details.model if r.grader_details else f"{GRADER_PROVIDER}/{GRADER_MODEL}",
+                "score": r.grader.score,
+                "strengths": list(r.grader.strengths),
+                "weaknesses": list(r.grader.weaknesses),
+                "explanation": r.grader.explanation,
+                "tokens_used": r.grader_details.tokens_used if r.grader_details else None,
+                "cost_usd": r.grader_details.cost_usd if r.grader_details else None,
+            }
+            if r.grader is not None
+            else None
+        ),
+        "grader_error": r.grader_error,
+    }
+
+
 def render_report(
     results: list[CaseResult],
     matrix: list[tuple[str, str]],
     prompt_versions: list[str],
     case_ids: list[str],
     notes: str | None,
+    run_id: str,
+    grader_enabled: bool,
 ) -> str:
     lines: list[str] = []
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    lines.append(f"## Run: {timestamp}\n")
+    lines.append(f"## Run: {timestamp}  ·  `{run_id}`\n")
     lines.append(
-        "**Pipeline:** instructor + structured ParentEvent extraction (Mode.TOOLS)  "
+        "**Pipeline:** instructor + structured ParentEvent extraction  "
     )
     lines.append(f"**Prompt versions:** {', '.join(prompt_versions)}  ")
     lines.append(
-        f"**Models:** {', '.join(f'{p}/{m}' for p, m in matrix)}  "
+        f"**Contender models:** {', '.join(f'{p}/{m}' for p, m in matrix)}  "
     )
     lines.append(f"**Cases:** {', '.join(case_ids)}  ")
     modes_used = sorted({r.details.mode for r in results if r.details})
     if modes_used:
         lines.append(f"**Instructor mode:** {', '.join(modes_used)}  ")
-    lines.append(f"**Frozen today:** {FROZEN_TODAY.isoformat()}\n")
+    lines.append(f"**Frozen today:** {FROZEN_TODAY.isoformat()}  ")
+    if grader_enabled:
+        lines.append(f"**Grader (judge):** {GRADER_PROVIDER}/{GRADER_MODEL}  ")
+    else:
+        lines.append("**Grader (judge):** _disabled (--skip-grader)_  ")
+    lines.append("")
     if notes:
         lines.append(f"> {notes}\n")
 
-    # ---- Summary table -----------------------------------------------------
-    lines.append("### Summary\n")
-    lines.append(
-        "| Provider/Model | Prompt | Cases passed | Avg tokens | Avg latency | Avg cost |"
-    )
-    lines.append("| --- | --- | --- | --- | --- | --- |")
-
+    # ---- Per prompt-version: contender table + per-case detail -----------
     for version in prompt_versions:
+        lines.append(f"## Prompt `{version}`\n")
+        lines.append("### Contenders\n")
+        header = "| Provider/Model | Rule pass | Grader avg | Avg tokens | Avg latency | Extraction $/1k | Grader $/1k |"
+        sep =    "| --- | --- | --- | --- | --- | --- | --- |"
+        lines.append(header)
+        lines.append(sep)
+
         for provider, model in matrix:
             subset = [
                 r for r in results
@@ -315,21 +453,33 @@ def render_report(
             avg_latency = (
                 sum(r.duration_s for r in ok) / len(ok) if ok else 0.0
             )
-            costs = [cost_usd(provider, model, r.details) for r in ok]
-            real_costs = [c for c in costs if c is not None]
-            avg_cost = sum(real_costs) / len(real_costs) if real_costs else None
-
+            extraction_costs = [cost_usd(provider, model, r.details) for r in ok]
+            real_extraction_costs = [c for c in extraction_costs if c is not None]
+            avg_extraction_cost = (
+                sum(real_extraction_costs) / len(real_extraction_costs)
+                if real_extraction_costs else None
+            )
+            graded = [r for r in subset if r.grader is not None]
+            grader_avg = (
+                sum(r.grader.score for r in graded) / len(graded)
+                if graded else None
+            )
+            grader_costs = [r.grader_details.cost_usd for r in subset if r.grader_details]
+            avg_grader_cost = (
+                sum(grader_costs) / len(grader_costs) if grader_costs else None
+            )
+            grader_cell = f"{grader_avg:.1f}/10" if grader_avg is not None else "—"
             lines.append(
-                f"| {provider}/{model} | {version} | {passed}/{len(subset)} | "
-                f"{avg_tokens} | {avg_latency:.2f}s | {fmt_cost(avg_cost)} |"
+                f"| {provider}/{model} | {passed}/{len(subset)} | {grader_cell} | "
+                f"{avg_tokens} | {avg_latency:.2f}s | {fmt_cost(avg_extraction_cost)} | "
+                f"{fmt_cost(avg_grader_cost)} |"
             )
 
-    lines.append("")
+        lines.append("")
 
-    # ---- Per-case detail ---------------------------------------------------
-    for case_id in case_ids:
-        lines.append(f"### {case_id}\n")
-        for version in prompt_versions:
+        # ---- Per-case detail ---------------------------------------------
+        for case_id in case_ids:
+            lines.append(f"### {case_id}\n")
             for provider, model in matrix:
                 r = next(
                     (
@@ -341,18 +491,27 @@ def render_report(
                 )
                 if r is None:
                     continue
-                tag = f"{provider}/{model} · prompt {version}"
+                tag = f"{provider}/{model}"
                 if r.error:
                     lines.append(f"**{tag}** — ❌ error: `{r.error}`\n")
+                    if r.grader is not None:
+                        lines.append(
+                            f"> Grader: **{r.grader.score}/10** — {r.grader.explanation}\n"
+                        )
                     continue
 
                 tokens = r.details.tokens_used if r.details else 0
                 cost = cost_usd(provider, model, r.details)
                 status = "✓" if r.all_passed else "✗"
-                lines.append(
+                header_line = (
                     f"**{tag}** — {status} · "
                     f"{tokens} tokens · {r.duration_s:.2f}s · {fmt_cost(cost)}"
                 )
+                if r.grader is not None:
+                    header_line += f" · grader **{r.grader.score}/10**"
+                elif r.grader_error:
+                    header_line += f" · grader ⚠ {r.grader_error}"
+                lines.append(header_line)
                 lines.append("")
                 lines.append("| field | expected | actual | ✓ |")
                 lines.append("| --- | --- | --- | --- |")
@@ -362,6 +521,18 @@ def render_report(
                         f"| {c.name} | {c.expected} | {c.actual} | {mark} |"
                     )
                 lines.append("")
+                if r.grader is not None:
+                    if r.grader.strengths:
+                        lines.append("_Strengths:_")
+                        for s in r.grader.strengths:
+                            lines.append(f"- {s}")
+                    if r.grader.weaknesses:
+                        lines.append("_Weaknesses:_")
+                        for w in r.grader.weaknesses:
+                            lines.append(f"- {w}")
+                    lines.append("")
+                    lines.append(f"> {r.grader.explanation}")
+                    lines.append("")
 
     lines.append("---\n")
     return "\n".join(lines)
@@ -397,7 +568,12 @@ async def main() -> int:
     parser.add_argument(
         "--no-append",
         action="store_true",
-        help="Print the report but do not append to results.md.",
+        help="Print the report but do not append rows to results.jsonl.",
+    )
+    parser.add_argument(
+        "--skip-grader",
+        action="store_true",
+        help="Skip the LLM-as-judge grader step (faster iteration; cheaper).",
     )
     args = parser.parse_args()
 
@@ -456,6 +632,9 @@ async def main() -> int:
         f"{len(cases) * len(runnable) * len(prompt_versions)} call(s)..."
     )
 
+    run_id = new_run_id()
+    print(f"Run ID: {run_id}")
+
     results: list[CaseResult] = []
     for version in prompt_versions:
         for provider, model in runnable:
@@ -470,25 +649,31 @@ async def main() -> int:
                 )
                 results.append(r)
 
+    grader_enabled = not args.skip_grader
+    if grader_enabled:
+        cases_by_id = {c.case_id: c for c in cases}
+        print(f"\nGrading {len(results)} result(s) with {GRADER_PROVIDER}/{GRADER_MODEL}...")
+        await grade_results(results, cases_by_id)
+
     report = render_report(
         results=results,
         matrix=runnable,
         prompt_versions=prompt_versions,
         case_ids=[c.case_id for c in cases],
         notes=args.notes,
+        run_id=run_id,
+        grader_enabled=grader_enabled,
     )
 
     print()
     print(report)
 
     if not args.no_append:
-        RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        if not RESULTS_PATH.exists():
-            RESULTS_PATH.write_text("# VillageOS — Extraction Eval Results\n\n---\n\n")
-        with RESULTS_PATH.open("a") as f:
-            f.write(report)
-            f.write("\n")
-        print(f"Appended to {RESULTS_PATH.relative_to(API_ROOT)}")
+        JSONL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        expected_by_id = {c.case_id: c.expected for c in cases}
+        rows = [result_to_row(r, run_id, expected_by_id[r.case_id]) for r in results]
+        written = append_rows(JSONL_PATH, rows)
+        print(f"Appended {written} row(s) to {JSONL_PATH.relative_to(API_ROOT)}")
 
     any_failures = any(not r.all_passed for r in results)
     return 1 if any_failures else 0
