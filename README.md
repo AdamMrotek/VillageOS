@@ -41,9 +41,10 @@ model-backed endpoint observable in production.
 - **Structured LLM output, not vibes.** `instructor` + Pydantic enforces
   the `ParentEvent` contract (title, type, start_time, action_items,
   confidence, source_text) on every extraction.
-- **Eval harness with a golden dataset.** Ten real-world messy inputs
-  run under `pytest` — regressions in extraction quality fail the
-  build, not the user.
+- **Eval harness with a golden dataset.** Messy real-world inputs run
+  as a parameterised matrix across providers, models, prompt versions,
+  and instructor modes; per-field pass/fail, latency, and cost-per-1k
+  tracked in an append-only log. See [Evaluation](#evaluation).
 - **Architecture documented as it's built.** Numbered ADRs in
   [`ADL.md`](./ADL.md) record the trade-offs (monorepo, FastAPI vs Next
   API routes, Tailwind v4, shared `packages/ui`, …).
@@ -69,6 +70,57 @@ flowchart LR
     UI[packages/ui · shadcn]
   end
   W -.uses.-> UI
+```
+
+---
+
+## Evaluation
+
+Reliable LLM output is the actual product risk. VillageOS treats
+extraction quality as a tested contract, not a vibe.
+
+- **Golden dataset** of real parent messages in
+  [`apps/api/tests/golden/`](./apps/api/tests/golden) with field-level
+  expectations: `event_type`, `start_time` / `start_date` (±30 min
+  tolerance), `is_all_day`, action-item keyword coverage, confidence
+  floor.
+- **Frozen "today"** in every run so relative dates ("next Saturday")
+  evaluate deterministically.
+- **Append-only run log** in
+  [`evals/extraction/results.md`](./apps/api/evals/extraction/results.md)
+  capturing prompt version, instructor mode, model, tokens, latency,
+  cost-per-1k, and per-field pass/fail for every run.
+
+### Model selection — current findings
+
+Full analysis in
+[`model_selection.md`](./apps/api/evals/extraction/model_selection.md).
+Production-quality candidates:
+
+| Provider/Model | Mode | Pass rate | Latency | Cost / 1k | Role |
+|---|---|---|---|---|---|
+| `groq/llama-4-scout-17b` | JSON | 4/4 | **0.71s** | **$0.25** | Fastest viable + cheapest |
+| `openai/gpt-4o-mini` | TOOLS | 4/4 | 2.20s | $0.27 | Default fallback |
+| `groq/openai/gpt-oss-20b` | JSON | 4/4 | 1.02s | $0.56 | Backup if scout regresses |
+| `openai/gpt-4o` | TOOLS | 4/4 | 1.50s | $5.17 | Use only when mini fails |
+
+**Date extraction is the discriminator.** Title, type, and action items
+pass on every model in the matrix; the differences are almost entirely
+about whether the model gets `start_time` right on relative-date inputs
+like *"next Saturday."* Several otherwise-capable models
+(`llama-3.3-70b`, `qwen3-32b`, `llama-3.1-8b`) silently fail this case
+— exactly the kind of regression a golden eval catches and ad-hoc
+testing misses.
+
+### Reproduce
+
+```bash
+cd apps/api
+python -m evals.extraction.run                 # full matrix, current prompt, append to results.md
+python -m evals.extraction.run \
+  --models openai/gpt-4o-mini \
+  --cases _adhoc_football \
+  --no-append                                  # one model, one case, print only
 ```
 
 ---
