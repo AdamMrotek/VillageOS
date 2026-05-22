@@ -17,23 +17,21 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     const supabase = createClient();
-    const url = new URL(window.location.href);
-    const code = url.searchParams.get("code");
 
     async function verify() {
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) {
-          setStatus("invalid");
-          return;
-        }
+      // createBrowserClient auto-exchanges the ?code= in the URL on init
+      // (detectSessionInUrl). getSession() awaits that, so we just read the
+      // result — manually exchanging again would fail (codes are single-use).
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session) {
         window.history.replaceState({}, "", "/reset-password");
         setStatus("ready");
-        return;
+      } else {
+        setStatus("invalid");
       }
-
-      const { data } = await supabase.auth.getUser();
-      setStatus(data.user ? "ready" : "invalid");
     }
 
     verify();
