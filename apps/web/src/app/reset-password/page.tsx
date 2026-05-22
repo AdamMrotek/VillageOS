@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-type Status = "verifying" | "ready" | "invalid";
+type Status = "verifying" | "ready" | "invalid" | "success";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -55,16 +55,34 @@ export default function ResetPasswordPage() {
     if (error) {
       setError(error.message);
       setLoading(false);
-    } else {
+      return;
+    }
+
+    await supabase.auth.signOut({ scope: "others" });
+    setStatus("success");
+    setTimeout(() => {
       router.push("/events");
       router.refresh();
-    }
+    }, 1500);
   }
 
   if (status === "verifying") {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-8">
         <p className="text-sm text-muted-foreground">Verifying reset link…</p>
+      </main>
+    );
+  }
+
+  if (status === "success") {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center p-8">
+        <div className="w-full max-w-sm space-y-2 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">Password updated</h1>
+          <p className="text-sm text-muted-foreground">
+            Redirecting you to your events…
+          </p>
+        </div>
       </main>
     );
   }
@@ -108,7 +126,7 @@ export default function ResetPasswordPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               autoComplete="new-password"
               className="flex h-9 w-full rounded-md border border-input bg-surface px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
@@ -124,7 +142,7 @@ export default function ResetPasswordPage() {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               autoComplete="new-password"
               className="flex h-9 w-full rounded-md border border-input bg-surface px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />

@@ -34,10 +34,9 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/sign-in") ||
     pathname.startsWith("/sign-up") ||
     pathname.startsWith("/forgot-password");
-  const isPublicRoute = isAuthRoute || pathname.startsWith("/auth/callback");
   const isRecoveryRoute = pathname.startsWith("/reset-password");
 
-  if (!user && !isPublicRoute && !isRecoveryRoute) {
+  if (!user && !isAuthRoute && !isRecoveryRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
     return NextResponse.redirect(url);
