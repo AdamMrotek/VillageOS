@@ -6,7 +6,8 @@ VillageOS uses Supabase Auth (email + password) with `@supabase/ssr` for cookie-
 
 - **Sign up** — `/sign-up` → Supabase sends confirmation email → user clicks link → signed in
 - **Sign in** — `/sign-in` → on success redirects to `/events`
-- **Forgot password** — `/forgot-password` → Supabase sends reset email → link goes to `/reset-password?code=...` → page exchanges code and shows new-password form → redirects to `/events`
+- **Forgot password** — `/forgot-password` → Supabase sends reset email → link goes to `/reset-password?token=<otp>&email=<addr>&type=recovery` → page calls `verifyOtp` (cross-device safe; no per-device PKCE verifier), scrubs the URL, shows new-password form → on success, full sign-out and redirect to `/sign-in`
+- **Change password (logged-in)** — `/settings/password` → "Send verification code" calls `reauthenticate()` → Supabase emails a 6-digit nonce → user enters nonce + new password → `updateUser({ password, nonce })` → `signOut({ scope: "others" })` kicks all other devices; current session stays
 
 ## Required Supabase configuration
 
@@ -31,22 +32,33 @@ If the redirect URL isn't in the allow-list, Supabase silently falls back to the
 
 **Dashboard → Authentication → Email Templates → Reset Password**
 
-The link's `href` **must** use `{{ .ConfirmationURL }}`, not a hardcoded URL. That placeholder expands to the Supabase verify endpoint, which then bounces to `redirect_to` (our `/reset-password`).
+The link embeds `{{ .Token }}` and `{{ .Email }}` as query params on a link to `/reset-password`. The client calls `verifyOtp({ email, token, type: 'recovery' })` to consume the token. This is JS-side, so headless email scanners (Outlook Safelinks, Mimecast, Barracuda) can't burn the link by pre-fetching it, and the same link works on any device — there's no per-device PKCE verifier.
 
-Example body:
 ```html
 <h2>Reset your VillageOS password</h2>
-<p><a href="{{ .ConfirmationURL }}">Reset password</a></p>
-<p>If you didn't request this, ignore this email.</p>
+<p>
+  <a href="{{ .RedirectTo }}?token={{ .Token }}&type=recovery&email={{ .Email }}">
+    Reset password
+  </a>
+</p>
+<p>This link expires in 10 minutes. If you didn't request this, ignore.</p>
 ```
 
-Same applies to **Confirm signup**, **Magic Link**, **Change Email**, and **Invite user** templates.
+Use `{{ .RedirectTo }}` (the value `/forgot-password` passes per request — `http://localhost:3000/reset-password` in dev, the prod URL in prod), **not** `{{ .SiteURL }}`. `{{ .SiteURL }}` is a single static value set in the dashboard, so hardcoding it sends every email — including ones requested from `localhost` — to production. `{{ .RedirectTo }}` requires the value to be in **URL Configuration → Redirect URLs**, which is the same allow-list described above.
 
-## Email rate limit (2/hour)
+Other templates (**Confirm signup**, **Magic Link**, **Change Email**, **Invite user**) still use `{{ .ConfirmationURL }}` unless/until they're migrated to the same OTP pattern.
 
-Supabase's built-in email service is hard-capped at **2 emails per hour per project** and the template configuration is locked. This blocks development and is unworkable in production.
+### 2a. Tighten OTP lifespan
 
-### Fix: custom SMTP
+**Authentication → Providers → Email → Email OTP Expiry** → `600` (10 minutes). Short window = lower exposure if the email is intercepted, screenshotted, or left in a shared inbox.
+
+### 2b. Enable "Secure password change"
+
+**Authentication → Sign In / Providers → Email → Secure password change** → **ON**.
+
+With this off, any valid access token can call `PUT /auth/v1/user` with `{password}` directly — bypassing our UI entirely. With it on, `updateUser({ password })` is rejected unless the caller is in a recovery session (just completed `verifyOtp({ type: 'recovery' })`) or supplies a `nonce` from `reauthenticate()`. Net effect: a stolen bearer token alone can no longer change the password — the attacker also needs access to the user's email.
+
+### Custom SMTP
 
 Configure your own SMTP provider in **Project Settings → Authentication → SMTP Settings**. This removes the rate limit and unlocks template editing.
 
@@ -71,22 +83,35 @@ Configure your own SMTP provider in **Project Settings → Authentication → SM
 4. Save — Supabase sends a test email
 5. Template editor unlocks; rate limit lifts
 
+## Security model
+
+The reset and change-password flows are designed so that **possession of a session is not enough to change the password** — the user must also prove control of the email account on the *current page load*.
+
+- **No session fallback on `/reset-password`** — the page only renders the password form after a successful `verifyOtp` *this load*. A logged-in attacker landing on the page without a fresh token sees the "invalid" state.
+- **URL scrubbing on mount** — `window.history.replaceState` runs synchronously before any async work, so the token never leaks into referer headers, browser history, or screenshots taken after the page settles.
+- **Single-use + short-lived tokens** — Supabase marks the OTP consumed on first `verifyOtp`; server-side expiry is 10 minutes.
+- **Global sign-out after reset** — completing a reset triggers `signOut({ scope: "global" })`, killing the session everywhere (including any device where the email link may have leaked) and forcing fresh sign-in with the new password.
+- **Secure password change enforced by Supabase** — with the setting enabled, Supabase's auth API rejects `updateUser({ password })` for ordinary sessions; only recovery sessions or `reauthenticate()` nonces are accepted. The check happens in GoTrue (Supabase's auth backend), not in our Next.js code — our app talks to it as a client. UI gates alone are not enough.
+- **Email-in-URL tradeoff** — the reset link contains the user's email as a query param so the JS can call `verifyOtp({ email, token })`. It's only visible until the scrub runs (one synchronous tick) but is briefly observable to shoulder-surfers. If unacceptable, switch the template + client to the `token_hash` variant (`{{ .TokenHash }}` in the email, `verifyOtp({ token_hash, type: 'recovery' })` on the client) for the same cross-device behaviour without email exposure.
+
 ## Common issues
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Reset link lands on `localhost:3000` from prod email | Redirect URL not in allow-list → fell back to Site URL | Add prod URL to **Redirect URLs** (above) |
-| `?error=auth_callback_failed#error=access_denied&error_code=otp_expired` | Email scanner/preview consumed the single-use token before the user clicked | Use a fresh link, click within a minute; try a different inbox if a scanner keeps burning links |
+| Reset link lands on **production** from a localhost request | Email template hardcodes `{{ .SiteURL }}` instead of `{{ .RedirectTo }}` | Update the Reset Password template to use `{{ .RedirectTo }}` as the link base (above) |
+| `?error=auth_callback_failed#error=access_denied&error_code=otp_expired` | Token expired (>10 min) or already consumed by a previous click | Request a fresh link. Note: scanners no longer burn tokens with the OTP flow — they don't execute the JS that calls `verifyOtp`, so this is now rare |
 | Reset link lands on app root, not `/reset-password` | Nested query string in `redirect_to` got mangled by Supabase | Use direct `redirectTo: ${origin}/reset-password` (no intermediate callback). See `apps/web/src/app/forgot-password/page.tsx` |
 | "Email rate limit exceeded" after a few attempts | Hit the 2/hour cap | Configure custom SMTP (above) |
-| Reset form errors with "Auth session missing" | Recovery code wasn't exchanged | `/reset-password` exchanges `?code=` on mount; check browser console for errors |
+| Reset form shows "Link expired" immediately on landing | `/reset-password` was opened without `token`/`email`/`type=recovery` query params, or `verifyOtp` returned an error | Re-request from `/forgot-password` and click the email link directly. Do not bookmark or hand-edit the URL — the page only renders the password form after a successful OTP verification this load |
 
 ## Relevant files
 
 - `apps/web/src/app/sign-in/page.tsx` — sign-in form, redirects to `/events`
 - `apps/web/src/app/sign-up/page.tsx` — sign-up form
 - `apps/web/src/app/forgot-password/page.tsx` — request reset email
-- `apps/web/src/app/reset-password/page.tsx` — exchanges recovery code, sets new password
+- `apps/web/src/app/reset-password/page.tsx` — email-link landing; verifies OTP, sets new password, signs out globally
+- `apps/web/src/app/(app)/settings/password/page.tsx` — logged-in password change via `reauthenticate()` + emailed nonce
 - `apps/web/src/app/auth/callback/route.ts` — generic OAuth/code-exchange callback (kept for future OAuth flows; not used in the reset path)
 - `apps/web/src/proxy.ts` — middleware: route protection + session refresh
 - `apps/web/src/lib/supabase/client.ts` — browser client

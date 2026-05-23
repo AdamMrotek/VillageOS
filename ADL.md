@@ -185,3 +185,19 @@ SUPABASE_SECRET_KEY=sb_secret_...
 **Supersedes** the RLS-as-safety-net framing in ADR-007. See [BACKEND.md](BACKEND.md#database-access-pattern).
 
 ---
+
+## ADR-011 — Password reset uses OTP/token flow, not PKCE
+
+**Decision:** Password reset emails carry `{{ .Token }}` + `{{ .Email }}` as query params on a link to `/reset-password`, which calls `verifyOtp({ email, token, type: 'recovery' })`. Logged-in password changes live on a separate route (`/settings/password`) using `reauthenticate()` + emailed nonce. "Secure password change" is enabled on the Supabase project so `updateUser({ password })` is rejected unless the caller is in a recovery session or supplies a nonce.
+
+**Reasons:**
+- **Cross-device.** PKCE stores a code verifier in `localStorage` on the requesting device; opening the email on another device failed with `code verifier not found`. OTP carries no per-device state.
+- **Survives email scanners.** Outlook Safelinks / Mimecast / Barracuda pre-fetch URLs and burn single-use links. Headless scanners don't execute JS, so the JS-side `verifyOtp` call is what actually consumes the token.
+- **Bearer-token bypass closed.** With "Secure password change" on, a stolen access token alone can't `PUT /auth/v1/user` to change the password — the attacker also needs access to the user's email.
+- **No session fallback on `/reset-password`.** The new-password form only renders after a successful `verifyOtp` *this page load*; a pre-existing session is never enough.
+
+**Tradeoffs:** the email is briefly visible in the URL until `window.history.replaceState` scrubs it (one synchronous tick). Switch to the `token_hash` variant if that exposure is unacceptable.
+
+**See also:** [AUTH.md](AUTH.md)
+
+---
