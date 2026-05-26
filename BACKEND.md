@@ -47,6 +47,22 @@ async def example(user: dict = Depends(get_current_user)):
 
 The decoded claims dict includes `sub` (Supabase user UUID), `email`, `role`, and standard JWT fields.
 
+### Error handling
+
+Never return raw exception messages to the client — they can leak stack traces, file paths, library versions, or upstream API details. Log the full traceback server-side with `logger.exception(...)` and raise an `HTTPException` with a generic `detail`. Let `HTTPException`s from inner code pass through untouched so intentional 4xx responses aren't masked as 500s.
+
+```python
+try:
+    return await extract_event(body.raw_text)
+except HTTPException:
+    raise
+except Exception as e:
+    logger.exception("Failed to extract event")
+    raise HTTPException(status_code=500, detail="Internal error") from e
+```
+
+---
+
 ### Database access pattern
 
 `app/core/db.py` provides two clients:

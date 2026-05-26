@@ -16,7 +16,6 @@ def get_prompt(version: str | None = None) -> tuple[str, str]:
         return CURRENT_VERSION, CURRENT_PROMPT
     if version not in VERSIONS:
         raise ValueError(
-            f"Unknown extraction prompt version '{version}'. "
-            f"Known: {sorted(VERSIONS)}"
+            f"Unknown extraction prompt version '{version}'. Known: {sorted(VERSIONS)}"
         )
     return version, VERSIONS[version]

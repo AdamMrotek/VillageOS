@@ -1,0 +1,32 @@
+target-version = "py312"
+line-length = 100
+
+extend-exclude = [
+    ".venv",
+    ".aws-sam",
+    "__pycache__",
+]
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+
+# FastAPI's `Depends(...)` / `Body(...)` defaults are the canonical idiom;
+# B008's warning is a false positive for this pattern.
+ignore = ["B008"]
+
+[lint.per-file-ignores]
+# `load_dotenv()` runs before app imports so env-driven config is available
+# at module import time. Standard FastAPI / eval-script pattern.
+"main.py" = ["E402"]
+"evals/**.py" = ["E402", "E501"]
+# Prompt templates contain long example strings; line breaks would hurt readability.
+"app/prompts/extraction/**.py" = ["E501"]
+
+[format]
+quote-style = "double"

@@ -30,19 +30,19 @@ class TestBuildDateTable:
 
 class TestCombineToDatetime:
     def test_with_literal_time(self):
-        assert combine_to_datetime(
-            date(2026, 5, 15), time(12, 0), EventType.school
-        ) == datetime(2026, 5, 15, 12, 0)
+        assert combine_to_datetime(date(2026, 5, 15), time(12, 0), EventType.school) == datetime(
+            2026, 5, 15, 12, 0
+        )
 
     def test_school_default_time(self):
-        assert combine_to_datetime(
-            date(2026, 5, 15), None, EventType.school
-        ) == datetime(2026, 5, 15, 9, 0)
+        assert combine_to_datetime(date(2026, 5, 15), None, EventType.school) == datetime(
+            2026, 5, 15, 9, 0
+        )
 
     def test_non_school_default_time(self):
-        assert combine_to_datetime(
-            date(2026, 5, 16), None, EventType.sport
-        ) == datetime(2026, 5, 16, 10, 0)
+        assert combine_to_datetime(date(2026, 5, 16), None, EventType.sport) == datetime(
+            2026, 5, 16, 10, 0
+        )
 
 
 class TestDraftToEvent:

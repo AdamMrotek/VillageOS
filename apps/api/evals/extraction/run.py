@@ -301,9 +301,7 @@ def cost_usd(provider: str, model: str, details: ExtractionRunDetails | None) ->
     if price is None:
         return None
     in_per_m, out_per_m = price
-    return (
-        details.prompt_tokens * in_per_m + details.completion_tokens * out_per_m
-    ) / 1_000_000
+    return (details.prompt_tokens * in_per_m + details.completion_tokens * out_per_m) / 1_000_000
 
 
 def fmt_cost(value: float | None) -> str:
@@ -317,8 +315,12 @@ def _checks_to_dicts(checks: list[FieldCheck]) -> list[dict]:
     return [
         {
             "name": c.name,
-            "expected": c.expected if isinstance(c.expected, (str, int, float, bool, list, dict)) else str(c.expected),
-            "actual": c.actual if isinstance(c.actual, (str, int, float, bool, list, dict)) else str(c.actual),
+            "expected": c.expected
+            if isinstance(c.expected, (str, int, float, bool, list, dict))
+            else str(c.expected),
+            "actual": c.actual
+            if isinstance(c.actual, (str, int, float, bool, list, dict))
+            else str(c.actual),
             "passed": c.passed,
         }
         for c in checks
@@ -382,7 +384,9 @@ def result_to_row(r: CaseResult, run_id: str, expected: dict) -> dict:
         "error": r.error,
         "grader": (
             {
-                "model": r.grader_details.model if r.grader_details else f"{GRADER_PROVIDER}/{GRADER_MODEL}",
+                "model": r.grader_details.model
+                if r.grader_details
+                else f"{GRADER_PROVIDER}/{GRADER_MODEL}",
                 "score": r.grader.score,
                 "strengths": list(r.grader.strengths),
                 "weaknesses": list(r.grader.weaknesses),
@@ -409,13 +413,9 @@ def render_report(
     lines: list[str] = []
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines.append(f"## Run: {timestamp}  ·  `{run_id}`\n")
-    lines.append(
-        "**Pipeline:** instructor + structured ParentEvent extraction  "
-    )
+    lines.append("**Pipeline:** instructor + structured ParentEvent extraction  ")
     lines.append(f"**Prompt versions:** {', '.join(prompt_versions)}  ")
-    lines.append(
-        f"**Contender models:** {', '.join(f'{p}/{m}' for p, m in matrix)}  "
-    )
+    lines.append(f"**Contender models:** {', '.join(f'{p}/{m}' for p, m in matrix)}  ")
     lines.append(f"**Cases:** {', '.join(case_ids)}  ")
     modes_used = sorted({r.details.mode for r in results if r.details})
     if modes_used:
@@ -434,40 +434,33 @@ def render_report(
         lines.append(f"## Prompt `{version}`\n")
         lines.append("### Contenders\n")
         header = "| Provider/Model | Rule pass | Grader avg | Avg tokens | Avg latency | Extraction $/1k | Grader $/1k |"
-        sep =    "| --- | --- | --- | --- | --- | --- | --- |"
+        sep = "| --- | --- | --- | --- | --- | --- | --- |"
         lines.append(header)
         lines.append(sep)
 
         for provider, model in matrix:
             subset = [
-                r for r in results
+                r
+                for r in results
                 if r.provider == provider and r.model == model and r.prompt_version == version
             ]
             if not subset:
                 continue
             passed = sum(1 for r in subset if r.all_passed)
             ok = [r for r in subset if r.details is not None]
-            avg_tokens = (
-                int(sum(r.details.tokens_used for r in ok) / len(ok)) if ok else 0
-            )
-            avg_latency = (
-                sum(r.duration_s for r in ok) / len(ok) if ok else 0.0
-            )
+            avg_tokens = int(sum(r.details.tokens_used for r in ok) / len(ok)) if ok else 0
+            avg_latency = sum(r.duration_s for r in ok) / len(ok) if ok else 0.0
             extraction_costs = [cost_usd(provider, model, r.details) for r in ok]
             real_extraction_costs = [c for c in extraction_costs if c is not None]
             avg_extraction_cost = (
                 sum(real_extraction_costs) / len(real_extraction_costs)
-                if real_extraction_costs else None
+                if real_extraction_costs
+                else None
             )
             graded = [r for r in subset if r.grader is not None]
-            grader_avg = (
-                sum(r.grader.score for r in graded) / len(graded)
-                if graded else None
-            )
+            grader_avg = sum(r.grader.score for r in graded) / len(graded) if graded else None
             grader_costs = [r.grader_details.cost_usd for r in subset if r.grader_details]
-            avg_grader_cost = (
-                sum(grader_costs) / len(grader_costs) if grader_costs else None
-            )
+            avg_grader_cost = sum(grader_costs) / len(grader_costs) if grader_costs else None
             grader_cell = f"{grader_avg:.1f}/10" if grader_avg is not None else "—"
             lines.append(
                 f"| {provider}/{model} | {passed}/{len(subset)} | {grader_cell} | "
@@ -483,9 +476,12 @@ def render_report(
             for provider, model in matrix:
                 r = next(
                     (
-                        x for x in results
-                        if x.case_id == case_id and x.provider == provider
-                        and x.model == model and x.prompt_version == version
+                        x
+                        for x in results
+                        if x.case_id == case_id
+                        and x.provider == provider
+                        and x.model == model
+                        and x.prompt_version == version
                     ),
                     None,
                 )
@@ -517,9 +513,7 @@ def render_report(
                 lines.append("| --- | --- | --- | --- |")
                 for c in r.checks:
                     mark = "✓" if c.passed else "✗"
-                    lines.append(
-                        f"| {c.name} | {c.expected} | {c.actual} | {mark} |"
-                    )
+                    lines.append(f"| {c.name} | {c.expected} | {c.actual} | {mark} |")
                 lines.append("")
                 if r.grader is not None:
                     if r.grader.strengths:
@@ -597,6 +591,7 @@ async def main() -> int:
                 raise SystemExit(f"Unknown prompt version '{v}'. Known: {sorted(PROMPT_VERSIONS)}")
     else:
         from app.prompts.extraction import CURRENT_VERSION
+
         prompt_versions = [CURRENT_VERSION]
 
     cases = load_cases()

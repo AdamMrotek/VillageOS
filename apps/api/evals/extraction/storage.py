@@ -12,14 +12,15 @@ from __future__ import annotations
 
 import json
 import secrets
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 def new_run_id(now: datetime | None = None) -> str:
     """ISO-second UTC timestamp plus 4 hex chars, e.g. 2026-05-19T14-22-01Z-a1b2."""
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     return now.strftime("%Y-%m-%dT%H-%M-%SZ") + "-" + secrets.token_hex(2)
 
 

@@ -4,6 +4,7 @@
 > WhatsApp threads, PDF newsletters, flyer photos — into structured,
 > schema-valid calendar events with action items and confidence scores.
 
+[![CI](https://github.com/AdamMrotek/VillageOS/actions/workflows/ci.yml/badge.svg)](https://github.com/AdamMrotek/VillageOS/actions/workflows/ci.yml)
 [![Live demo](https://img.shields.io/badge/demo-village--os--web.vercel.app-black)](https://village-os-web.vercel.app/sign-in)
 [![Live API](https://img.shields.io/badge/api-AWS%20Lambda-FF9900?logo=awslambda&logoColor=white)](https://eep5cd3mp0.execute-api.eu-north-1.amazonaws.com/docs)
 [![ADRs](https://img.shields.io/badge/architecture-8%20ADRs-blue)](./ADL.md)

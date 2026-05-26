@@ -1,24 +1,23 @@
-from datetime import datetime, timezone
-from enum import Enum
-from typing import Optional
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from typing_extensions import Self
 
 
-class EventType(str, Enum):
-    school     = "school"
-    sport      = "sport"
-    birthday   = "birthday"
+class EventType(StrEnum):
+    school = "school"
+    sport = "sport"
+    birthday = "birthday"
     fundraiser = "fundraiser"
-    meeting    = "meeting"
-    deadline   = "deadline"
-    other      = "other"
+    meeting = "meeting"
+    deadline = "deadline"
+    other = "other"
 
 
 class ActionItem(BaseModel):
     description: str
-    cost_estimate_gbp: Optional[float] = None
+    cost_estimate_gbp: float | None = None
     urgent: bool = False
     done: bool = False
 
@@ -42,15 +41,18 @@ class ActionItemUpdate(BaseModel):
 
 
 class ParentEvent(BaseModel):
-    title: str               = Field(..., description="Short title, max 60 chars")
+    title: str = Field(..., description="Short title, max 60 chars")
     event_type: EventType
-    start_time: datetime     = Field(..., description="ISO 8601. Infer year from context; default to next occurrence if ambiguous")
-    end_time: Optional[datetime] = None
-    is_all_day: bool         = False
-    location: Optional[str]  = None
-    description: Optional[str] = Field(None, description="Up to a few sentences, max 240 chars")
+    start_time: datetime = Field(
+        ...,
+        description="ISO 8601. Infer year from context; default to next occurrence if ambiguous",
+    )
+    end_time: datetime | None = None
+    is_all_day: bool = False
+    location: str | None = None
+    description: str | None = Field(None, description="Up to a few sentences, max 240 chars")
     action_items: list[ActionItem] = []
-    confidence: float        = Field(..., ge=0.0, le=1.0, description="Extraction confidence, 0 to 1")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence, 0 to 1")
 
     @field_validator("title")
     @classmethod
@@ -64,7 +66,7 @@ class ParentEvent(BaseModel):
 
     @field_validator("description")
     @classmethod
-    def description_clean(cls, v: Optional[str]) -> Optional[str]:
+    def description_clean(cls, v: str | None) -> str | None:
         if v is None:
             return v
         v = v.strip()
@@ -75,7 +77,7 @@ class ParentEvent(BaseModel):
     @field_validator("start_time")
     @classmethod
     def start_time_sane(cls, v: datetime) -> datetime:
-        v_aware = v.replace(tzinfo=timezone.utc) if v.tzinfo is None else v
+        v_aware = v.replace(tzinfo=UTC) if v.tzinfo is None else v
         if v_aware.year < 2000:
             raise ValueError("start_time year is suspiciously far in the past")
         return v

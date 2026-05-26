@@ -45,18 +45,12 @@ _clients: dict[tuple[str, str], instructor.AsyncInstructor] = {}
 
 
 def _resolve_mode(name: str | None, provider_default: str | None = None) -> instructor.Mode:
-    name = (
-        name
-        or os.getenv("INSTRUCTOR_MODE")
-        or provider_default
-        or "TOOLS"
-    ).upper()
+    name = (name or os.getenv("INSTRUCTOR_MODE") or provider_default or "TOOLS").upper()
     try:
         return instructor.Mode[name]
     except KeyError as e:
         raise ValueError(
-            f"Unknown instructor mode '{name}'. "
-            f"Valid: {[m.name for m in instructor.Mode]}"
+            f"Unknown instructor mode '{name}'. Valid: {[m.name for m in instructor.Mode]}"
         ) from e
 
 
@@ -69,9 +63,7 @@ def _get_client(provider: str, mode: instructor.Mode) -> instructor.AsyncInstruc
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
     cfg = _PROVIDER_CONFIG[provider]
-    api_key = (
-        os.getenv(cfg["api_key_env"]) if cfg["api_key_env"] else None
-    ) or cfg["default_key"]
+    api_key = (os.getenv(cfg["api_key_env"]) if cfg["api_key_env"] else None) or cfg["default_key"]
     if not api_key:
         raise RuntimeError(
             f"Missing API key for provider '{provider}'. "

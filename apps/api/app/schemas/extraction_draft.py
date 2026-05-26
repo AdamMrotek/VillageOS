@@ -1,5 +1,4 @@
 from datetime import date, datetime, time
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,10 +23,10 @@ class ParentEventDraft(BaseModel):
             "use the explicit calendar date from the text."
         ),
     )
-    start_time_literal: Optional[time] = None
-    end_time: Optional[datetime] = None
+    start_time_literal: time | None = None
+    end_time: datetime | None = None
     is_all_day: bool = False
-    location: Optional[str] = None
-    description: Optional[str] = None
+    location: str | None = None
+    description: str | None = None
     action_items: list[ActionItem] = []
     confidence: float = Field(ge=0.0, le=1.0)

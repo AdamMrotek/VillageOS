@@ -1,18 +1,17 @@
 from datetime import datetime
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 from pydantic import BaseModel
 
 
-class Role(str, Enum):
-    parent   = "parent"
-    admin    = "admin"
+class Role(StrEnum):
+    parent = "parent"
+    admin = "admin"
     provider = "provider"
 
 
 class Profile(BaseModel):
     id: str
     role: Role
-    full_name: Optional[str] = None
+    full_name: str | None = None
     created_at: datetime
