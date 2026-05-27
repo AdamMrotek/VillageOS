@@ -201,3 +201,32 @@ SUPABASE_SECRET_KEY=sb_secret_...
 **See also:** [AUTH.md](AUTH.md)
 
 ---
+
+## ADR-012 — GitHub Actions CI with ruff for the Python API
+
+**Decision:** A single `.github/workflows/ci.yml` runs on every push to `main` and every PR, with two parallel jobs:
+- **Web** (`pnpm -F @repo/web lint` → `tsc --noEmit` → `pnpm build`) covering `apps/web` + `apps/eval-viewer` via Turborepo.
+- **API** (`ruff check .` → `ruff format --check .` → `pytest`) covering `apps/api`.
+
+Eval runs against real LLM providers are deliberately kept *out* of CI for now; when wired up they will live in a separate manual-only `evals.yml` (`workflow_dispatch`).
+
+**Reasons:**
+- **GitHub-native, free at this scale.** Public repos get unlimited Actions minutes; even on a private-Free plan this workflow uses ~250 min/month against a 2,000-min allowance. No third-party CI to install, no separate billing surface.
+- **Ruff replaces the black + flake8 + isort + pyupgrade stack.** One tool, one config file (`apps/api/ruff.toml`), one binary, ~10× faster than the equivalent legacy chain. Format-on-save and CI use the same engine, so local and CI verdicts never diverge.
+- **Pragmatic rule set, not a maximalist one.** `E, F, I, UP, B` covers ~95% of real bugs and style with minimal noise. The selection is deliberately narrower than "everything ruff offers" because every added rule is a tax on PRs that doesn't repay itself unless it catches real defects.
+- **shadcn components in `packages/ui` are explicitly out of scope.** They're vendored source from `shadcn add` — owned in the sense.
+- **Concurrency cancels stale runs.** `concurrency.group: ci-${{ github.workflow }}-${{ github.ref }}` with `cancel-in-progress: true` means a fast follow-up push doesn't pay for the older run.
+- **Evals deferred, not abandoned.** Running the extraction matrix on every push would burn OpenAI + Groq credits on changes that can't affect extraction quality (e.g. CSS). Manual `workflow_dispatch` keeps eval-as-CI an *opt-in* signal, gated on judgment about when it earns the API spend.
+
+**Tradeoffs:**
+- **No automatic eval regression detection yet.** A prompt or pipeline change that quietly degrades extraction quality won't fail CI until eval is wired up with a `paths:` filter. Acceptable while the dataset is small and iteration is human-paced; revisit when prompt changes start landing without manual eval runs.
+- **No deploy job.** `sam deploy` on `main` is still manual. The auth doc lists the runbook; promoting it to CI is a one-job addition once we want push-to-deploy.
+- **Two separate jobs, not one toolchain.** The web and api jobs each install their own deps from scratch. Pip + pnpm caching keeps the wall-clock cost low (~3–5 min per run), so the parallel-jobs simplicity wins over a single hand-orchestrated job.
+
+**Impact:**
+- `.github/workflows/ci.yml` is the canonical CI definition.
+- `apps/api/ruff.toml` is the canonical Python lint/format config; running `ruff check .` and `ruff format .` from `apps/api` matches CI exactly.
+- `ruff>=0.7.0` is in `apps/api/requirements-dev.txt`.
+- README carries a live CI badge linking to the workflow runs page.
+
+---
