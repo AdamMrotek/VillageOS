@@ -67,6 +67,11 @@ jobs:
       - name: SAM deploy
         run: |
           sam deploy \
+            --stack-name villageos-api \
+            --region "${AWS_REGION}" \
+            --resolve-s3 \
+            --s3-prefix villageos-api \
+            --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
