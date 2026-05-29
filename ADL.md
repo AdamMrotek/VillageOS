@@ -230,3 +230,32 @@ Eval runs against real LLM providers are deliberately kept *out* of CI for now; 
 - README carries a live CI badge linking to the workflow runs page.
 
 ---
+
+## ADR-013 — GitHub Actions deploys the SAM stack via OIDC + a scoped IAM role
+
+**Decision:** A separate workflow `.github/workflows/deploy-api.yml` builds and deploys the FastAPI Lambda stack on every push to `main` that touches `apps/api/**` (plus `workflow_dispatch` as an escape hatch). GitHub Actions authenticates to AWS via OpenID Connect, assuming an IAM role (`github-actions-villageos-deploy`) whose trust policy is scoped to the repo and whose permissions are scoped to `villageos-api-*` resources in `eu-north-1`. No long-lived AWS access keys live in GitHub.
+
+**Reasons:**
+- **OIDC over static access keys.** Long-lived `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in GitHub secrets are a credential surface that rotates only when you remember. OIDC gives every workflow run a short-lived STS token (default 1 hour), tied cryptographically to the repo + ref via GitHub's identity provider. The trust policy's `sub` condition (`repo:AdamMrotek/VillageOS:*`) means even a compromised fork or PR from elsewhere cannot assume the role.
+- **Separate workflow from `ci.yml`, not a deploy job grafted on.** `ci.yml` stays fast, free, and green-on-every-push; `deploy-api.yml` carries its own secrets and IAM concerns. Disabling deploys (e.g. during an incident) is a one-file action that doesn't touch CI. The two-workflow split also keeps the GitHub Actions UI legible — CI runs are checks, deploys are deploys.
+- **Path filter on `apps/api/**`.** CSS or web-only changes don't trigger a Lambda redeploy. `apps/web` changes go to Vercel; `apps/api` changes go to AWS. The workflow file itself is also in the path list so editing the deploy pipeline triggers a deploy (so changes are validated immediately).
+- **Inline test gating, not `workflow_run` chaining.** The deploy job re-runs `ruff check`, `ruff format --check`, and `pytest` before assuming the AWS role. Yes, this duplicates the work `ci.yml` already did on the same SHA — but `workflow_run` triggers are awkward (no native path filtering, conclusion checks done in script) and the duplicated check is ~30 seconds. The semantic guarantee — "deploy never runs on broken code" — is worth the cheap re-run.
+- **Workflow is self-contained; `samconfig.toml` stays gitignored.** The workflow passes `--stack-name`, `--region`, `--resolve-s3`, `--s3-prefix`, and `--capabilities` explicitly. Reading `deploy-api.yml` shows the complete deploy contract without needing a local file. `samconfig.toml` remains a local-dev convenience and stays out of git in case someone later adds a secret to `parameter_overrides`.
+- **Parameters via GitHub `secrets` and `vars`.** Secret values (`SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`) live in repo secrets; non-secret values (`SUPABASE_URL`, `LLM_PROVIDER`, `ALLOWED_ORIGINS`) live in repo variables. The distinction is enforced by GitHub — variables appear in logs, secrets are masked — so it doubles as a leakage guard.
+- **IAM policy scoped by ARN, not `*`.** The deploy role is restricted to `villageos-api-*` resources (Lambda functions, IAM roles, log groups) and the SAM bootstrap stack `aws-sam-cli-managed-default-*`. The role cannot create or modify resources in any other stack, function, or log group in the account. Building this policy iteratively from CloudFormation `AccessDenied` events — rather than starting from `AdministratorAccess` and trimming — produces a tighter result and forces understanding of every action the deploy actually needs.
+
+**Tradeoffs:**
+- **Cold start for the IAM policy.** The first few deploys after creating the role surface missing permissions one at a time (`cloudformation:CreateChangeSet` on the SAM bootstrap stack was the first gap caught). Each gap is one line to add and a re-run; ten minutes total. The alternative — grant `*` and never see the gap — produces an unconstrained role that future-you would have to audit blind.
+- **OIDC trust policy is an under-documented footgun.** GitHub's `sub` claim is `repo:<owner>/<repo>:ref:refs/heads/<branch>` — not a URL, not the repo's HTTPS path, case-sensitive. The first trust policy on this role had a malformed `sub` (full URL pasted into the placeholder) and silently rejected every assume-role attempt with a generic `Not authorized` error. Once known, the gotcha is trivial; the first time, it cost 20 minutes.
+- **`samconfig.toml` and `deploy-api.yml` can drift.** Local `sam deploy` reads samconfig; CI uses CLI flags. If someone updates `parameter_overrides` in samconfig and forgets to mirror it in the workflow, local and CI deploys diverge. Acceptable because the divergence surface is small (3 non-secret parameters), and CI is the source of truth for what's actually deployed.
+
+**Impact:**
+- `.github/workflows/deploy-api.yml` is the canonical deploy workflow.
+- `apps/api/samconfig.toml` remains gitignored; the workflow does not depend on it.
+- AWS account `<account-id>` has an IAM OIDC provider for `token.actions.githubusercontent.com` and a role `github-actions-villageos-deploy` with the trust policy + inline permissions policy described above.
+- Required GitHub repository secrets: `AWS_DEPLOY_ROLE_ARN`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`.
+- Required GitHub repository variables: `SUPABASE_URL`, `LLM_PROVIDER`, `ALLOWED_ORIGINS`.
+
+**Supersedes** the "No deploy job" tradeoff in ADR-012; push-to-`main` deploy is no longer manual.
+
+---
