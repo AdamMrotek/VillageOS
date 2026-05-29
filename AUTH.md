@@ -17,14 +17,17 @@ VillageOS uses Supabase Auth (email + password) with `@supabase/ssr` for cookie-
 
 | Field | Value |
 | --- | --- |
-| Site URL | `https://village-os-web.vercel.app` |
-| Redirect URLs | `https://village-os-web.vercel.app/reset-password` |
+| Site URL | `https://village.co.uk` |
+| Redirect URLs | `https://village.co.uk/reset-password` |
+| | `https://www.village.co.uk/reset-password` |
 | | `http://localhost:3000/reset-password` |
 
 Add Vercel preview wildcard if previews need to work:
 ```
 https://village-os-web-*.vercel.app/reset-password
 ```
+The `village-os-web.vercel.app` URL still resolves after the custom-domain
+cutover, so keep its redirect entry too if you want the old host to work.
 
 If the redirect URL isn't in the allow-list, Supabase silently falls back to the Site URL — emails will point to the wrong host (commonly `http://localhost:3000`).
 

@@ -5,11 +5,11 @@
 > schema-valid calendar events with action items and confidence scores.
 
 [![CI](https://github.com/AdamMrotek/VillageOS/actions/workflows/ci.yml/badge.svg)](https://github.com/AdamMrotek/VillageOS/actions/workflows/ci.yml)
-[![Live demo](https://img.shields.io/badge/demo-village--os--web.vercel.app-black)](https://village-os-web.vercel.app/sign-in)
+[![Live demo](https://img.shields.io/badge/demo-village.co.uk-black)](https://village.co.uk/sign-in)
 [![Live API](https://img.shields.io/badge/api-AWS%20Lambda-FF9900?logo=awslambda&logoColor=white)](https://eep5cd3mp0.execute-api.eu-north-1.amazonaws.com/docs)
 [![ADRs](https://img.shields.io/badge/architecture-8%20ADRs-blue)](./ADL.md)
 
-**Live demo:** https://village-os-web.vercel.app/sign-in
+**Live demo:** https://village.co.uk/sign-in
 **Live API:** https://eep5cd3mp0.execute-api.eu-north-1.amazonaws.com/docs (Swagger)
 
 ![VillageOS screenshot](./docs/screenshot.png)
