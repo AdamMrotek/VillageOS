@@ -1,3 +1,5 @@
+import { CALENDAR_LOCALE } from "@/lib/config/calendar";
+
 type DateRangeInput = {
   start: string | Date;
   end?: string | Date | null;
@@ -40,13 +42,16 @@ export function isSameDay(a: Date, b: Date): boolean {
 
 export function formatTime(iso: string | Date): string {
   const d = iso instanceof Date ? iso : new Date(iso);
-  return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString(CALENDAR_LOCALE, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function formatDayLabel(day: Date, today: Date = new Date()): string {
   if (isSameDay(day, today)) return "Today";
   if (isSameDay(day, addDays(today, 1))) return "Tomorrow";
-  return day.toLocaleDateString("en-GB", {
+  return day.toLocaleDateString(CALENDAR_LOCALE, {
     weekday: "short",
     day: "numeric",
     month: "short",

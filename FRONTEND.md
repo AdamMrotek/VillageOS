@@ -62,6 +62,30 @@ The `components.json` in `packages/ui` directs the CLI to the correct location a
 
 ---
 
+## Dates & hydration
+
+Dates are resolved **on the client only**, never during SSR. The server renders in
+UTC, so computing `new Date()` while rendering would bake a server-timezone date
+into the initial HTML and cause an off-by-one hydration mismatch (e.g. the wrong
+day highlighted, or the wrong month shown near a boundary).
+
+**Convention:**
+
+- `today` and `weekAnchor` live in the calendar store (`src/lib/stores/calendar-store.ts`)
+  and are `null` until the client populates them after mount via `init()`. Never
+  compute them eagerly at module load or in a `useState` initializer — both run
+  during SSR.
+- Read them through `useToday()` / `useWeekAnchor()`, which return `null` until
+  mounted. Guard date-dependent UI on a non-null value: render a skeleton or a
+  neutral placeholder until the date resolves.
+- Derive other client dates (e.g. the displayed month) from `today` rather than
+  from a fresh `new Date()`. See `src/components/month-calendar.tsx`, where the
+  month anchor is derived from `today` plus an offset.
+- `new Date()` is fine inside **event handlers** (e.g. "jump to today") — those
+  only ever run on the client.
+
+---
+
 ## Auth flow (frontend side)
 
 Authentication uses Supabase SSR with server-side cookie-based sessions.

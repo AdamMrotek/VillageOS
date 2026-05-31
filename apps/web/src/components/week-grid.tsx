@@ -1,39 +1,70 @@
 "use client";
 
+import { useMemo } from "react";
 import { cn } from "@repo/ui/lib/utils";
 import type { StoredEvent } from "@/lib/types/events";
 import { eventTypeStyle } from "@/lib/event-styles";
 import { addDays, formatTime, isSameDay } from "@/lib/utils/date";
-import { useCalendarStore } from "@/lib/stores/calendar-store";
+import {
+  useCalendarStore,
+  useToday,
+  useWeekAnchor,
+} from "@/lib/stores/calendar-store";
 import { useEvents } from "@/lib/queries/events";
+import {
+  CALENDAR_LOCALE,
+  DAY_MONTH_FORMAT,
+  WEEKDAY_SHORT_FORMAT,
+} from "@/lib/config/calendar";
+
+// Stable empty reference for days with no events, so lookups don't allocate a
+// fresh array each render.
+const EMPTY_EVENTS: StoredEvent[] = [];
 
 export default function WeekGrid() {
-  const today = new Date();
-  const anchor = useCalendarStore((s) => s.weekAnchor);
+  const today = useToday();
+  const anchor = useWeekAnchor();
   const shiftWeek = useCalendarStore((s) => s.shiftWeek);
   const goToToday = useCalendarStore((s) => s.goToToday);
   const setOpenEventId = useCalendarStore((s) => s.setOpenEventId);
   const { data: events = [] } = useEvents();
 
+  // Index events by day once (sorted within each day) so the columns below are
+  // O(1) lookups instead of re-filtering the full event list for all 9 days on
+  // every render.
+  const eventsByDay = useMemo(() => {
+    const byDay = new Map<string, StoredEvent[]>();
+    for (const e of events) {
+      const key = new Date(e.start_time).toDateString();
+      const list = byDay.get(key);
+      if (list) list.push(e);
+      else byDay.set(key, [e]);
+    }
+    for (const list of byDay.values()) {
+      list.sort(
+        (a, b) =>
+          new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+      );
+    }
+    return byDay;
+  }, [events]);
+
+  // `anchor` is null until the client mounts (see useWeekAnchor). The whole grid
+  // is built off it, so show a placeholder rather than rendering a UTC-derived
+  // week into the SSR HTML (which would cause a hydration mismatch).
+  if (!anchor) return <WeekGridSkeleton />;
+
   // 9 days total: index 0 = peek-before, 1..7 = main week, 8 = peek-after
   const days = Array.from({ length: 9 }, (_, i) => addDays(anchor, i - 1));
-  const eventsByDay = days.map((day) =>
-    events
-      .filter((e) => isSameDay(new Date(e.start_time), day))
-      .sort(
-        (a, b) =>
-          new Date(a.start_time).getTime() -
-          new Date(b.start_time).getTime(),
-      ),
+  const dayEvents = days.map(
+    (day) => eventsByDay.get(day.toDateString()) ?? EMPTY_EVENTS,
   );
 
-  const totalVisible = eventsByDay.reduce((sum, list) => sum + list.length, 0);
-  const containsToday = days.slice(1, 8).some((d) => isSameDay(d, today));
+  const totalVisible = dayEvents.reduce((sum, list) => sum + list.length, 0);
+  const containsToday =
+    today != null && days.slice(1, 8).some((d) => isSameDay(d, today));
 
-  const weekLabel = `Week of ${days[1].toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "long",
-  })}`;
+  const weekLabel = `Week of ${days[1].toLocaleDateString(CALENDAR_LOCALE, DAY_MONTH_FORMAT)}`;
 
   const goPrev = () => shiftWeek(-1);
   const goNext = () => shiftWeek(1);
@@ -63,9 +94,9 @@ export default function WeekGrid() {
                 <DayColumn
                   key={day.toISOString()}
                   day={day}
-                  isToday={isSameDay(day, today)}
+                  isToday={today != null && isSameDay(day, today)}
                   isPeek={isPeek}
-                  events={eventsByDay[i]}
+                  events={dayEvents[i]}
                   onOpen={setOpenEventId}
                   onJump={isPeek ? (i === 0 ? goPrev : goNext) : undefined}
                   isLast={i === days.length - 1}
@@ -80,9 +111,9 @@ export default function WeekGrid() {
                 <DayRow
                   key={day.toISOString()}
                   day={day}
-                  isToday={isSameDay(day, today)}
+                  isToday={today != null && isSameDay(day, today)}
                   isPeek={isPeek}
-                  events={eventsByDay[i]}
+                  events={dayEvents[i]}
                   onOpen={setOpenEventId}
                   onJump={isPeek ? (i === 0 ? goPrev : goNext) : undefined}
                   isLast={i === days.length - 1}
@@ -92,6 +123,20 @@ export default function WeekGrid() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function WeekGridSkeleton() {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border border-hairline bg-surface">
+      <div className="flex items-start justify-between gap-4 border-b-2 border-ink px-7 pb-4 pt-6">
+        <div>
+          <div className="text-eyebrow-accent">02 · Calendar</div>
+          <h2 className="mt-2 whitespace-nowrap text-title text-ink">Week</h2>
+        </div>
+      </div>
+      <div className="min-h-[420px]" aria-hidden="true" />
     </div>
   );
 }
@@ -200,7 +245,7 @@ function DayColumn({
   onJump?: () => void;
   isLast: boolean;
 }) {
-  const weekday = day.toLocaleDateString("en-GB", { weekday: "short" });
+  const weekday = day.toLocaleDateString(CALENDAR_LOCALE, WEEKDAY_SHORT_FORMAT);
   const dateNum = day.getDate().toString().padStart(2, "0");
 
   return (
@@ -277,7 +322,7 @@ function DayRow({
   onJump?: () => void;
   isLast: boolean;
 }) {
-  const weekday = day.toLocaleDateString("en-GB", { weekday: "short" });
+  const weekday = day.toLocaleDateString(CALENDAR_LOCALE, WEEKDAY_SHORT_FORMAT);
   const dateNum = day.getDate().toString().padStart(2, "0");
 
   return (

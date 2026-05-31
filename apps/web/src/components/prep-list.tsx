@@ -4,8 +4,9 @@ import { useMemo } from "react";
 import { cn } from "@repo/ui/lib/utils";
 import type { ActionItem } from "@/lib/types/events";
 import { addDays, isSameDay } from "@/lib/utils/date";
-import { useCalendarStore } from "@/lib/stores/calendar-store";
+import { useCalendarStore, useToday } from "@/lib/stores/calendar-store";
 import { useEvents } from "@/lib/queries/events";
+import { CALENDAR_LOCALE, WEEKDAY_SHORT_FORMAT } from "@/lib/config/calendar";
 
 type PrepEntry = {
   item: ActionItem;
@@ -17,13 +18,12 @@ type PrepEntry = {
 export default function PrepList() {
   const { data: events = [] } = useEvents();
   const setOpenEventId = useCalendarStore((s) => s.setOpenEventId);
-  const today = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
+  // `today` is null until the client mounts (see useToday); render nothing
+  // date-dependent until then to stay hydration-safe.
+  const today = useToday();
 
   const entries: PrepEntry[] = useMemo(() => {
+    if (!today) return [];
     const out: PrepEntry[] = [];
     for (const event of events) {
       const eventDate = new Date(event.start_time);
@@ -47,6 +47,8 @@ export default function PrepList() {
     return out;
   }, [events, today]);
 
+  const groups = useMemo(() => groupByDay(entries), [entries]);
+
   return (
     <section className="rounded-2xl bg-accent-soft p-[22px]">
       <div className="mb-3.5">
@@ -58,14 +60,14 @@ export default function PrepList() {
         </h2>
       </div>
 
-      {entries.length === 0 ? (
+      {today == null || entries.length === 0 ? (
         <div className="text-[12.5px] leading-relaxed text-accent-dark">
           Reminders surface here once events exist — gifts to buy, slips to
           sign, kits to wash.
         </div>
       ) : (
         <div>
-          {groupByDay(entries).map((group, gi, all) => (
+          {groups.map((group, gi, all) => (
             <DayGroup
               key={group.date.toISOString()}
               date={group.date}
@@ -171,6 +173,6 @@ function dayBadge(date: Date, today: Date): string {
   if (isSameDay(date, today)) return "TODAY";
   if (isSameDay(date, addDays(today, 1))) return "TOMORROW";
   return date
-    .toLocaleDateString("en-GB", { weekday: "short" })
+    .toLocaleDateString(CALENDAR_LOCALE, WEEKDAY_SHORT_FORMAT)
     .toUpperCase();
 }

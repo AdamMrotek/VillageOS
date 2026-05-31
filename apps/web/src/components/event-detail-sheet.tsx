@@ -10,6 +10,7 @@ import {
 } from "@repo/ui/components/sheet";
 import type { StoredEvent } from "@/lib/types/events";
 import { formatTime } from "@/lib/utils/date";
+import { CALENDAR_LOCALE } from "@/lib/config/calendar";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 import {
   useDeleteEvent,
@@ -61,7 +62,7 @@ function EventDetailContent({
 
   const items = event.action_items;
   const date = new Date(event.start_time);
-  const dayLabel = date.toLocaleDateString("en-GB", {
+  const dayLabel = date.toLocaleDateString(CALENDAR_LOCALE, {
     weekday: "long",
     day: "numeric",
     month: "long",

@@ -5,66 +5,85 @@ import { cn } from "@repo/ui/lib/utils";
 import type { EventType } from "@/lib/types/events";
 import { eventTypeStyle } from "@/lib/event-styles";
 import { addDays, isSameDay } from "@/lib/utils/date";
-import { useCalendarStore } from "@/lib/stores/calendar-store";
+import {
+  useCalendarStore,
+  useToday,
+  useWeekAnchor,
+} from "@/lib/stores/calendar-store";
 import { useEvents } from "@/lib/queries/events";
-
-const MAX_DOTS_PER_DAY = 3;
-
-const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+import {
+  CALENDAR_LOCALE,
+  DAY_MONTH_FORMAT,
+  DAYS_PER_WEEK,
+  MAX_DOTS_PER_DAY,
+  MONTH_GRID_DAYS,
+  MONTH_LABEL_FORMAT,
+  WEEKDAY_LABELS_LETTER,
+} from "@/lib/config/calendar";
 
 export default function MonthCalendar() {
   const { data: events = [] } = useEvents();
-  const today = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
+  // `today` comes from the store, which resolves it on the client after mount.
+  // It is `null` during SSR/first paint, so the date-dependent highlights below
+  // are guarded on a non-null value to avoid an off-by-one hydration mismatch.
+  const today = useToday();
 
-  const [anchor, setAnchor] = useState<Date>(() => {
-    const d = new Date(today);
-    d.setDate(1);
-    return d;
-  });
+  // Track the displayed month as an offset from the current month and derive the
+  // anchor from `today`, rather than seeding it eagerly with `new Date()`. An
+  // eager seed would run during SSR (in UTC) and bake a server-timezone month
+  // into the HTML, causing an off-by-one hydration mismatch at month boundaries
+  // — the same reason `today`/`weekAnchor` are null-until-mount in the store.
+  const [monthOffset, setMonthOffset] = useState(0);
+  const anchor = useMemo(() => {
+    if (!today) return null;
+    const monthStart = new Date(today);
+    monthStart.setDate(1);
+    monthStart.setMonth(monthStart.getMonth() + monthOffset);
+    return monthStart;
+  }, [today, monthOffset]);
 
-  const grid = useMemo(() => buildMonthGrid(anchor), [anchor]);
+  const grid = useMemo(() => (anchor ? buildMonthGrid(anchor) : []), [anchor]);
 
-  const weekAnchor = useCalendarStore((s) => s.weekAnchor);
+  const weekAnchor = useWeekAnchor();
   const setWeekAnchor = useCalendarStore((s) => s.setWeekAnchor);
-  const activeWeekEnd = useMemo(() => addDays(weekAnchor, 7), [weekAnchor]);
+  const activeWeekEnd = useMemo(
+    () => (weekAnchor ? addDays(weekAnchor, DAYS_PER_WEEK) : null),
+    [weekAnchor],
+  );
 
   const eventTypesByDay = useMemo(() => {
-    const map = new Map<string, EventType[]>();
-    const sorted = [...events].sort(
-      (a, b) =>
-        new Date(a.start_time).getTime() - new Date(b.start_time).getTime(),
+    const typesByDay = new Map<string, EventType[]>();
+    const sortedEvents = [...events].sort(
+      (eventA, eventB) =>
+        new Date(eventA.start_time).getTime() -
+        new Date(eventB.start_time).getTime(),
     );
-    for (const e of sorted) {
-      const d = new Date(e.start_time);
-      d.setHours(0, 0, 0, 0);
-      const key = d.toDateString();
-      const list = map.get(key);
-      if (list) {
-        if (!list.includes(e.event_type)) list.push(e.event_type);
+    for (const event of sortedEvents) {
+      const eventDate = new Date(event.start_time);
+      eventDate.setHours(0, 0, 0, 0);
+      const dayKey = eventDate.toDateString();
+      const dayTypes = typesByDay.get(dayKey);
+      if (dayTypes) {
+        if (!dayTypes.includes(event.event_type)) {
+          dayTypes.push(event.event_type);
+        }
       } else {
-        map.set(key, [e.event_type]);
+        typesByDay.set(dayKey, [event.event_type]);
       }
     }
-    return map;
+    return typesByDay;
   }, [events]);
 
-  const monthLabel = anchor.toLocaleDateString("en-GB", {
-    month: "long",
-    year: "numeric",
-  });
-
   function shiftMonth(delta: number) {
-    setAnchor((prev) => {
-      const d = new Date(prev);
-      d.setMonth(d.getMonth() + delta);
-      d.setDate(1);
-      return d;
-    });
+    setMonthOffset((prev) => prev + delta);
   }
+
+  if (!anchor) return <MonthCalendarSkeleton />;
+
+  const monthLabel = anchor.toLocaleDateString(
+    CALENDAR_LOCALE,
+    MONTH_LABEL_FORMAT,
+  );
 
   return (
     <section className="flex w-full max-w-[300px] flex-col rounded-2xl border border-hairline bg-surface p-[14px]">
@@ -88,29 +107,33 @@ export default function MonthCalendar() {
       </div>
 
       <div className="grid grid-cols-7 gap-y-1">
-        {WEEKDAY_LABELS.map((w, i) => (
+        {WEEKDAY_LABELS_LETTER.map((weekdayLabel, weekdayIndex) => (
           <div
-            key={`${w}-${i}`}
+            key={`${weekdayLabel}-${weekdayIndex}`}
             className="pb-1 text-center font-mono text-[9px] font-semibold uppercase tracking-wider text-accent-dark"
           >
-            {w}
+            {weekdayLabel}
           </div>
         ))}
         {grid.map((day) => {
           const inMonth = day.getMonth() === anchor.getMonth();
-          const isToday = isSameDay(day, today);
+          const isToday = today != null && isSameDay(day, today);
           const dayTypes = eventTypesByDay.get(day.toDateString()) ?? [];
           const dotTypes = dayTypes.slice(0, MAX_DOTS_PER_DAY);
-          const inActiveWeek = day >= weekAnchor && day < activeWeekEnd;
-          const dow = day.getDay();
-          const isWeekStart = inActiveWeek && dow === 1;
-          const isWeekEnd = inActiveWeek && dow === 0;
+          const inActiveWeek =
+            weekAnchor != null &&
+            activeWeekEnd != null &&
+            day >= weekAnchor &&
+            day < activeWeekEnd;
+          const dayOfWeek = day.getDay();
+          const isWeekStart = inActiveWeek && dayOfWeek === 1;
+          const isWeekEnd = inActiveWeek && dayOfWeek === 0;
           return (
             <button
               key={day.toISOString()}
               type="button"
               onClick={() => setWeekAnchor(day)}
-              aria-label={`Jump to week of ${day.toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`}
+              aria-label={`Jump to week of ${day.toLocaleDateString(CALENDAR_LOCALE, DAY_MONTH_FORMAT)}`}
               aria-pressed={inActiveWeek}
               className="relative flex aspect-square items-center justify-center text-[11px] tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-dark/40"
             >
@@ -150,12 +173,14 @@ export default function MonthCalendar() {
                     !inMonth && "opacity-40",
                   )}
                 >
-                  {dotTypes.map((t, i) => (
+                  {dotTypes.map((eventType, dotIndex) => (
                     <span
-                      key={`${t}-${i}`}
+                      key={`${eventType}-${dotIndex}`}
                       className={cn(
                         "size-1 rounded-full",
-                        isToday ? "bg-accent-soft" : eventTypeStyle(t).dot,
+                        isToday
+                          ? "bg-accent-soft"
+                          : eventTypeStyle(eventType).dot,
                       )}
                     />
                   ))}
@@ -169,25 +194,38 @@ export default function MonthCalendar() {
   );
 }
 
+function MonthCalendarSkeleton() {
+  return (
+    <section className="flex w-full max-w-[300px] flex-col rounded-2xl border border-hairline bg-surface p-[14px]">
+      <div className="mb-3.5">
+        <div className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.22em] text-accent-dark">
+          Month
+        </div>
+      </div>
+      <div className="min-h-[260px]" aria-hidden="true" />
+    </section>
+  );
+}
+
 function buildMonthGrid(anchor: Date): Date[] {
   const firstOfMonth = new Date(
     anchor.getFullYear(),
     anchor.getMonth(),
     1,
   );
-  const dayOfWeek = firstOfMonth.getDay();
-  const offset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const start = new Date(firstOfMonth);
-  start.setDate(firstOfMonth.getDate() + offset);
+  const firstDayOfWeek = firstOfMonth.getDay();
+  const offsetToMonday = firstDayOfWeek === 0 ? -6 : 1 - firstDayOfWeek;
+  const gridStart = new Date(firstOfMonth);
+  gridStart.setDate(firstOfMonth.getDate() + offsetToMonday);
 
-  const out: Date[] = [];
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    d.setHours(0, 0, 0, 0);
-    out.push(d);
+  const days: Date[] = [];
+  for (let dayIndex = 0; dayIndex < MONTH_GRID_DAYS; dayIndex++) {
+    const day = new Date(gridStart);
+    day.setDate(gridStart.getDate() + dayIndex);
+    day.setHours(0, 0, 0, 0);
+    days.push(day);
   }
-  return out;
+  return days;
 }
 
 function NavButton({
