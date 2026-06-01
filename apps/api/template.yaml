@@ -75,6 +75,89 @@ Resources:
       LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
       RetentionInDays: 7
 
+  # Observability dashboard, built entirely from the structured JSON logs
+  # (no custom metrics — see ADR-014). Widgets are Logs Insights queries over
+  # the function's log group; redeploys with `sam deploy`.
+  ApiDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: VillageOS-API
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0, "y": 0, "width": 24, "height": 1,
+              "properties": { "markdown": "# VillageOS API — extraction telemetry  ·  log-derived, region ${AWS::Region}" }
+            },
+            {
+              "type": "log",
+              "x": 0, "y": 1, "width": 12, "height": 6,
+              "properties": {
+                "title": "Extraction LLM latency (ms)",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "query": "SOURCE '/aws/lambda/${ApiFunction}' | filter event = \"extraction_completed\" | stats avg(llm_duration_ms) as avg_ms, pct(llm_duration_ms, 50) as p50_ms, pct(llm_duration_ms, 95) as p95_ms by bin(5m)"
+              }
+            },
+            {
+              "type": "log",
+              "x": 12, "y": 1, "width": 12, "height": 6,
+              "properties": {
+                "title": "Requests by status code",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": true,
+                "query": "SOURCE '/aws/lambda/${ApiFunction}' | filter event = \"request_completed\" | stats count(*) as requests by bin(5m), status"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0, "y": 7, "width": 12, "height": 6,
+              "properties": {
+                "title": "Token spend by model",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": true,
+                "query": "SOURCE '/aws/lambda/${ApiFunction}' | filter event = \"extraction_completed\" | stats sum(total_tokens) as tokens by bin(1h), model"
+              }
+            },
+            {
+              "type": "log",
+              "x": 12, "y": 7, "width": 12, "height": 6,
+              "properties": {
+                "title": "Extraction confidence",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "query": "SOURCE '/aws/lambda/${ApiFunction}' | filter event = \"extraction_completed\" | stats avg(confidence) as avg_conf, min(confidence) as min_conf by bin(1h)"
+              }
+            },
+            {
+              "type": "log",
+              "x": 0, "y": 13, "width": 12, "height": 6,
+              "properties": {
+                "title": "Extractions per 5 min",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "query": "SOURCE '/aws/lambda/${ApiFunction}' | filter event = \"extraction_completed\" | stats count(*) as extractions by bin(5m)"
+              }
+            },
+            {
+              "type": "log",
+              "x": 12, "y": 13, "width": 12, "height": 6,
+              "properties": {
+                "title": "Recent errors",
+                "region": "${AWS::Region}",
+                "view": "table",
+                "query": "SOURCE '/aws/lambda/${ApiFunction}' | filter event = \"request_failed\" or event = \"extraction_failed\" | fields @timestamp, request_id, event, path | sort @timestamp desc | limit 20"
+              }
+            }
+          ]
+        }
+
 Outputs:
   ApiUrl:
     Description: Base URL of the deployed API
@@ -82,3 +165,6 @@ Outputs:
   FunctionName:
     Description: Lambda function name
     Value: !Ref ApiFunction
+  DashboardUrl:
+    Description: CloudWatch dashboard for extraction telemetry
+    Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/VillageOS-API'
