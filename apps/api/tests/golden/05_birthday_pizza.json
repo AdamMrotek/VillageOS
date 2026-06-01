@@ -1,0 +1,7 @@
+{
+  "event_type": ["birthday"],
+  "start_time": "2026-05-15T12:00:00",
+  "is_all_day": false,
+  "action_items_keywords": [["present", "gift"], "costume"],
+  "notes": "Typo-heavy WhatsApp message; robustness test. Frozen today = 2026-05-10 (Sunday); 'next Friday' resolves to 2026-05-15. Time 12:00 stated explicitly, so not all-day. event_type 'birthday' despite the 'birthsady' typo. Two atomic action items: buy a princess present, buy a cat-themed costume for Laura. Location 'Kingston Pizza restaurant'."
+}

@@ -8,7 +8,11 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.auth import get_current_user
-from app.routers import events, extract
+from app.core.logging import configure_logging
+from app.core.middleware import RequestContextMiddleware
+from app.routers import events, extract, health
+
+configure_logging()
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
@@ -21,15 +25,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestContextMiddleware)
 
+app.include_router(health.router)
 app.include_router(events.router)
 app.include_router(events.action_items_router)
 app.include_router(extract.router)
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
 
 
 @app.get("/api/me")

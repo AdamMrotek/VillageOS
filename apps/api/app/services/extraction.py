@@ -1,4 +1,6 @@
+import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import date
 
@@ -9,6 +11,8 @@ from app.prompts.extraction import get_prompt
 from app.schemas.events import ExtractResponse, ParentEvent
 from app.schemas.extraction_draft import ParentEventDraft
 from app.services.extraction_date import build_date_table, draft_to_event
+
+logger = logging.getLogger("villageos.extraction")
 
 _PROVIDER_CONFIG = {
     "ollama": {
@@ -123,6 +127,7 @@ async def extract_event(
     prompt_version: str | None = None,
     mode: str | None = None,
     return_details: bool = False,
+    request_id: str | None = None,
 ) -> ExtractResponse | tuple[ExtractResponse, ExtractionRunDetails]:
     """Extract a structured event from raw text.
 
@@ -157,6 +162,22 @@ async def extract_event(
     resolved_mode = _resolve_mode(mode, cfg.get("mode"))
     client = _get_client(resolved_provider, resolved_mode)
 
+    # Full prompt sent to the model — user content + large, so DEBUG only
+    # (LOG_LEVEL=DEBUG). Logged before the call so it survives a failed request.
+    logger.debug(
+        "extraction_prompt",
+        extra={
+            "event": "extraction_prompt",
+            "request_id": request_id,
+            "provider": resolved_provider,
+            "model": fast_model,
+            "prompt_version": version,
+            "messages": messages,
+        },
+    )
+
+    llm_start = time.perf_counter()
+
     used_model = fast_model
     event, completion = await _extract_once(client, used_model, messages, version, today)
     prompt_tokens = completion.usage.prompt_tokens if completion.usage else 0
@@ -170,10 +191,40 @@ async def extract_event(
         completion_tokens += completion.usage.completion_tokens if completion.usage else 0
         total_tokens += completion.usage.total_tokens if completion.usage else 0
 
+    llm_duration_ms = round((time.perf_counter() - llm_start) * 1000, 1)
+
     response = ExtractResponse(
         event=event,
         model_used=used_model,
         tokens_used=total_tokens,
+    )
+
+    logger.info(
+        "extraction_completed",
+        extra={
+            "event": "extraction_completed",
+            "request_id": request_id,
+            "model": used_model,
+            "provider": resolved_provider,
+            "prompt_version": version,
+            "mode": resolved_mode.name,
+            "llm_duration_ms": llm_duration_ms,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "confidence": event.confidence,
+            "input_length_chars": len(raw_text),
+        },
+    )
+
+    # Full extracted payload — user content, so gated behind DEBUG (LOG_LEVEL=DEBUG).
+    logger.debug(
+        "extraction_result",
+        extra={
+            "event": "extraction_result",
+            "request_id": request_id,
+            "result": event.model_dump(mode="json"),
+        },
     )
 
     if return_details:
