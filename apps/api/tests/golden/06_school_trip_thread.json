@@ -1,0 +1,8 @@
+{
+  "event_type": ["school"],
+  "start_time": "2026-05-21T08:45:00",
+  "is_all_day": false,
+  "end_time": "2026-05-21T16:30:00",
+  "action_items_keywords": ["£12", ["packed lunch", "lunch"], ["consent", "slip", "permission"]],
+  "notes": "Long, high-noise WhatsApp thread (robustness test). The only real event is buried in a single forwarded official message mid-thread; everything around it is chatter. Distractors the model must NOT extract as the event: a cancelled football training, a lost water bottle, and an end-of-year gift collection. Frozen today = 2026-05-10 (Sunday); explicit calendar date 'Thursday 21st May' resolves to 2026-05-21 (verified Thursday). Coach leaves 8:45am -> start_time (time stated, so not all-day); 'back at school for approximately 4:30pm' -> end_time 16:30 within the eval's ±30m tolerance. event_type 'school' (class trip). Three atomic action items, all due Monday 18th May: pay the £12-per-child contribution via ParentPay, send a nut-free packed lunch, and return the signed consent slip."
+}

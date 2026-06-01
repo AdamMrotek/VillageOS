@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiClient } from "@/lib/api-client";
 import {
+  EVENT_FIELD_LIMITS,
   EVENT_TYPES,
   type ActionItemInput,
   type EventType,
@@ -150,15 +151,20 @@ export default function NewEventPage() {
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div className="space-y-1.5">
-            <label htmlFor="title" className="text-eyebrow">
-              Title
-            </label>
+            <div className="flex items-baseline justify-between">
+              <label htmlFor="title" className="text-eyebrow">
+                Title
+              </label>
+              <span className="text-meta">
+                {title.length} / {EVENT_FIELD_LIMITS.title}
+              </span>
+            </div>
             <input
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
-              maxLength={60}
+              maxLength={EVENT_FIELD_LIMITS.title}
               className={inputClass}
             />
           </div>
@@ -233,14 +239,19 @@ export default function NewEventPage() {
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="description" className="text-eyebrow">
-              Description (optional)
-            </label>
+            <div className="flex items-baseline justify-between">
+              <label htmlFor="description" className="text-eyebrow">
+                Description (optional)
+              </label>
+              <span className="text-meta">
+                {description.length} / {EVENT_FIELD_LIMITS.description}
+              </span>
+            </div>
             <textarea
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              maxLength={120}
+              maxLength={EVENT_FIELD_LIMITS.description}
               rows={3}
               className="flex w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
