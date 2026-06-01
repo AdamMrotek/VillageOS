@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass
 
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
@@ -22,8 +22,10 @@ class AuthContext:
 
 
 async def get_auth(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(_bearer),
 ) -> AuthContext:
+    request_id = getattr(request.state, "request_id", None)
     token = credentials.credentials
     try:
         signing_key = _jwks_client.get_signing_key_from_jwt(token)
@@ -36,7 +38,14 @@ async def get_auth(
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired") from None
     except jwt.InvalidTokenError as exc:
-        logger.warning("JWT validation failed: %s", exc)
+        logger.warning(
+            "auth_failed",
+            extra={
+                "event": "auth_failed",
+                "request_id": request_id,
+                "reason": str(exc),
+            },
+        )
         raise HTTPException(status_code=401, detail="Invalid token") from exc
     return AuthContext(user=payload, token=token)
 

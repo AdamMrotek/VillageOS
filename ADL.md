@@ -259,3 +259,29 @@ Eval runs against real LLM providers are deliberately kept *out* of CI for now; 
 **Supersedes** the "No deploy job" tradeoff in ADR-012; push-to-`main` deploy is no longer manual.
 
 ---
+
+## ADR-014 — Structured logging + observability
+
+**Decision:** The API logs structured JSON to stdout, which Lambda forwards to CloudWatch where each field is queryable in Logs Insights. Three pieces:
+
+- **`configure_logging()`** swaps the root logger to a `python-json-logger` formatter at startup.
+- **`RequestContextMiddleware`** gives every request an ID, times it, logs one access line, and echoes the ID back as the `x-request-id` header.
+- **Extraction telemetry** — `extract_event` logs an `extraction_completed` event with model, provider, LLM latency, token usage, confidence, and input length.
+
+A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/api/LOGS.md`.
+
+**Reasons:**
+- **`python-json-logger`** over `structlog` and stdlib text logs: a one-line formatter swap makes every existing `logger.info(...)` queryable by field, with no call-site changes.
+- **Request ID** correlates the access log with the extraction telemetry for the same call, and lets a client or bug report name the exact request to find.
+- **Per-extraction telemetry** is the point — token counts come from the provider's `response.usage`, and logging confidence + input length alongside makes cost and prompt-quality questions answerable from logs alone.
+- **`/healthz` is a bare 200**, not a dependency check — liveness only; pinging Supabase or the LLM on every probe costs money for little value.
+
+**Out of scope (for now):** Logfire/Axiom forwarding, OpenTelemetry tracing, custom CloudWatch metrics, and Sentry. Each adds a service or cost for marginal gain at one service / one user; CloudWatch + Logs Insights covers the questions we actually ask.
+
+**Impact:**
+- `apps/api/app/core/logging.py`, `apps/api/app/core/middleware.py`, `apps/api/app/routers/health.py` — new.
+- `apps/api/app/services/extraction.py` — `extract_event` takes an optional `request_id`; route passes `request.state.request_id`.
+- `python-json-logger` added to `apps/api/requirements.txt`.
+- `apps/api/LOGS.md` is the canonical Logs Insights query set.
+
+---
