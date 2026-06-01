@@ -10,6 +10,14 @@ export const EVENT_TYPES = [
 
 export type EventType = (typeof EVENT_TYPES)[number];
 
+// Field length limits — keep in sync with API validation
+// (apps/api/app/schemas/events.py) and the events_* CHECK constraints
+// in supabase/migrations.
+export const EVENT_FIELD_LIMITS = {
+  title: 60,
+  description: 240,
+} as const;
+
 export type ActionItemInput = {
   description: string;
   cost_estimate_gbp: number | null;

@@ -1,0 +1,15 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "CloudWatchDashboard",
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:PutDashboard",
+                "cloudwatch:GetDashboard",
+                "cloudwatch:DeleteDashboards"
+            ],
+            "Resource": "arn:aws:cloudwatch::995039994463:dashboard/VillageOS-*"
+        }
+    ]
+}
