@@ -6,6 +6,7 @@ import type { ActionItem } from "@/lib/types/events";
 import { addDays, isSameDay } from "@/lib/utils/date";
 import { useCalendarStore, useToday } from "@/lib/stores/calendar-store";
 import { useEvents } from "@/lib/queries/events";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import { CALENDAR_LOCALE, WEEKDAY_SHORT_FORMAT } from "@/lib/config/calendar";
 
 type PrepEntry = {
@@ -16,7 +17,7 @@ type PrepEntry = {
 };
 
 export default function PrepList() {
-  const { data: events = [] } = useEvents();
+  const { data: events = [], isPending, isFetching } = useEvents();
   const setOpenEventId = useCalendarStore((s) => s.setOpenEventId);
   // `today` is null until the client mounts (see useToday); render nothing
   // date-dependent until then to stay hydration-safe.
@@ -49,8 +50,10 @@ export default function PrepList() {
 
   const groups = useMemo(() => groupByDay(entries), [entries]);
 
+  const loading = isPending || isFetching;
+
   return (
-    <section className="rounded-2xl bg-accent-soft p-[22px]">
+    <section className="relative rounded-2xl bg-accent-soft p-[22px]">
       <div className="mb-3.5">
         <div className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.22em] text-accent-dark">
           01 · Overview
@@ -79,6 +82,7 @@ export default function PrepList() {
           ))}
         </div>
       )}
+      <LoadingOverlay loading={loading} label="Loading prep…" />
     </section>
   );
 }

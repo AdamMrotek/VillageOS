@@ -11,6 +11,7 @@ import {
   useWeekAnchor,
 } from "@/lib/stores/calendar-store";
 import { useEvents } from "@/lib/queries/events";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import {
   CALENDAR_LOCALE,
   DAY_MONTH_FORMAT,
@@ -27,7 +28,7 @@ export default function WeekGrid() {
   const shiftWeek = useCalendarStore((s) => s.shiftWeek);
   const goToToday = useCalendarStore((s) => s.goToToday);
   const setOpenEventId = useCalendarStore((s) => s.setOpenEventId);
-  const { data: events = [] } = useEvents();
+  const { data: events = [], isPending, isFetching } = useEvents();
 
   // Index events by day once (sorted within each day) so the columns below are
   // O(1) lookups instead of re-filtering the full event list for all 9 days on
@@ -49,10 +50,25 @@ export default function WeekGrid() {
     return byDay;
   }, [events]);
 
+  const loading = isPending || isFetching;
+
   // `anchor` is null until the client mounts (see useWeekAnchor). The whole grid
-  // is built off it, so show a placeholder rather than rendering a UTC-derived
-  // week into the SSR HTML (which would cause a hydration mismatch).
-  if (!anchor) return <WeekGridSkeleton />;
+  // is built off it, so render a minimal shell — with the loading overlay on top
+  // — rather than a UTC-derived week into the SSR HTML (a hydration mismatch).
+  if (!anchor) {
+    return (
+      <div className="relative flex flex-col overflow-hidden rounded-xl border border-hairline bg-surface">
+        <div className="flex items-start justify-between gap-4 border-b-2 border-ink px-7 pb-4 pt-6">
+          <div>
+            <div className="text-eyebrow-accent">02 · Calendar</div>
+            <h2 className="mt-2 whitespace-nowrap text-title text-ink">Week</h2>
+          </div>
+        </div>
+        <div className="min-h-[420px]" aria-hidden="true" />
+        <LoadingOverlay loading={loading} label="Loading week…" />
+      </div>
+    );
+  }
 
   // 9 days total: index 0 = peek-before, 1..7 = main week, 8 = peek-after
   const days = Array.from({ length: 9 }, (_, i) => addDays(anchor, i - 1));
@@ -71,7 +87,7 @@ export default function WeekGrid() {
   const goToday = () => goToToday();
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-hairline bg-surface">
+    <div className="relative flex flex-col overflow-hidden rounded-xl border border-hairline bg-surface">
       <GridHeader
         weekLabel={weekLabel}
         containsToday={containsToday}
@@ -123,20 +139,7 @@ export default function WeekGrid() {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function WeekGridSkeleton() {
-  return (
-    <div className="flex flex-col overflow-hidden rounded-xl border border-hairline bg-surface">
-      <div className="flex items-start justify-between gap-4 border-b-2 border-ink px-7 pb-4 pt-6">
-        <div>
-          <div className="text-eyebrow-accent">02 · Calendar</div>
-          <h2 className="mt-2 whitespace-nowrap text-title text-ink">Week</h2>
-        </div>
-      </div>
-      <div className="min-h-[420px]" aria-hidden="true" />
+      <LoadingOverlay loading={loading} label="Loading week…" />
     </div>
   );
 }

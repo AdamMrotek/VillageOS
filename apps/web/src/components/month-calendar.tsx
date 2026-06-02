@@ -11,6 +11,7 @@ import {
   useWeekAnchor,
 } from "@/lib/stores/calendar-store";
 import { useEvents } from "@/lib/queries/events";
+import { LoadingOverlay } from "@/components/loading-overlay";
 import {
   CALENDAR_LOCALE,
   DAY_MONTH_FORMAT,
@@ -22,7 +23,7 @@ import {
 } from "@/lib/config/calendar";
 
 export default function MonthCalendar() {
-  const { data: events = [] } = useEvents();
+  const { data: events = [], isPending, isFetching } = useEvents();
   // `today` comes from the store, which resolves it on the client after mount.
   // It is `null` during SSR/first paint, so the date-dependent highlights below
   // are guarded on a non-null value to avoid an off-by-one hydration mismatch.
@@ -78,7 +79,23 @@ export default function MonthCalendar() {
     setMonthOffset((prev) => prev + delta);
   }
 
-  if (!anchor) return <MonthCalendarSkeleton />;
+  const loading = isPending || isFetching;
+
+  // `anchor` is null during SSR/first client paint (hydration guard). Render a
+  // minimal shell with the loading overlay on top until it resolves.
+  if (!anchor) {
+    return (
+      <section className="relative flex min-h-[362px] w-full max-w-[300px] flex-col rounded-2xl border border-hairline bg-surface p-[14px]">
+        <div className="mb-3.5">
+          <div className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.22em] text-accent-dark">
+            Month
+          </div>
+        </div>
+        <div className="min-h-[260px]" aria-hidden="true" />
+        <LoadingOverlay loading={loading} label="Loading month…" />
+      </section>
+    );
+  }
 
   const monthLabel = anchor.toLocaleDateString(
     CALENDAR_LOCALE,
@@ -86,7 +103,7 @@ export default function MonthCalendar() {
   );
 
   return (
-    <section className="flex w-full max-w-[300px] flex-col rounded-2xl border border-hairline bg-surface p-[14px]">
+    <section className="relative flex min-h-[362px] w-full max-w-[300px] flex-col rounded-2xl border border-hairline bg-surface p-[14px]">
       <div className="mb-3.5 flex items-start justify-between gap-2">
         <div>
           <div className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.22em] text-accent-dark">
@@ -190,19 +207,7 @@ export default function MonthCalendar() {
           );
         })}
       </div>
-    </section>
-  );
-}
-
-function MonthCalendarSkeleton() {
-  return (
-    <section className="flex w-full max-w-[300px] flex-col rounded-2xl border border-hairline bg-surface p-[14px]">
-      <div className="mb-3.5">
-        <div className="font-mono text-[9.5px] font-semibold uppercase tracking-[0.22em] text-accent-dark">
-          Month
-        </div>
-      </div>
-      <div className="min-h-[260px]" aria-hidden="true" />
+      <LoadingOverlay loading={loading} label="Loading month…" />
     </section>
   );
 }
