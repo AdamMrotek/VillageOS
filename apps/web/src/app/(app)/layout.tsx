@@ -1,3 +1,4 @@
+import { Toaster } from "@repo/ui/components/sonner";
 import TopNav from "@/components/nav/top-nav";
 import QueryProvider from "@/components/query-provider";
 
@@ -10,6 +11,7 @@ export default function AppLayout({
     <QueryProvider>
       <TopNav />
       {children}
+      <Toaster />
     </QueryProvider>
   );
 }

@@ -6,7 +6,11 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
-import type { StoredEvent } from "@/lib/types/events";
+import type {
+  ExtractResponse,
+  ParentEvent,
+  StoredEvent,
+} from "@/lib/types/events";
 
 export const EVENTS_KEY = ["events"] as const;
 
@@ -14,6 +18,30 @@ export function useEvents() {
   return useQuery({
     queryKey: EVENTS_KEY,
     queryFn: () => apiClient<StoredEvent[]>("/api/events"),
+  });
+}
+
+export function useExtractEvent() {
+  return useMutation({
+    mutationFn: (rawText: string) =>
+      apiClient<ExtractResponse>("/api/extract", {
+        method: "POST",
+        body: JSON.stringify({ raw_text: rawText }),
+      }),
+    meta: { errorMessage: "Couldn't extract the event. Please try again." },
+  });
+}
+
+export function useCreateEvent() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (event: ParentEvent) =>
+      apiClient("/api/events", {
+        method: "POST",
+        body: JSON.stringify(event),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: EVENTS_KEY }),
+    meta: { errorMessage: "Couldn't create the event. Please try again." },
   });
 }
 

@@ -51,7 +51,7 @@
   --muted-foreground:      var(--ink-mute);
   --accent:                var(--accent-green);
   --accent-foreground:     var(--surface);
-  --destructive:           var(--cat-deadline);
+  --destructive:           6 63% 46%; /* #BF3A2B — warm brick red; clears WCAG AA on white (~5.4:1), unlike the brighter --cat-deadline */
   --destructive-foreground: var(--surface);
   --border:                var(--hairline);
   --input:                 var(--hairline);

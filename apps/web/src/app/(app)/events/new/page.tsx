@@ -2,24 +2,27 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiClient } from "@/lib/api-client";
+import { toast } from "sonner";
+import { useCreateEvent, useExtractEvent } from "@/lib/queries/events";
 import {
   EVENT_FIELD_LIMITS,
   EVENT_TYPES,
   type ActionItemInput,
   type EventType,
-  type ExtractResponse,
 } from "@/lib/types/events";
 import PageLayout from "@/components/page-layout";
 
 function toIsoOrNull(value: string): string | null {
   if (!value) return null;
-  return new Date(value).toISOString();
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString();
 }
 
 function isoToLocalInput(iso: string | null): string {
   if (!iso) return "";
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -27,10 +30,10 @@ function isoToLocalInput(iso: string | null): string {
 export default function NewEventPage() {
   const router = useRouter();
 
+  const extractMutation = useExtractEvent();
+  const createMutation = useCreateEvent();
+
   const [rawText, setRawText] = useState("");
-  const [extracting, setExtracting] = useState(false);
-  const [extractError, setExtractError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{ model: string; tokens: number } | null>(null);
 
   const [title, setTitle] = useState("");
   const [eventType, setEventType] = useState<EventType>("other");
@@ -40,64 +43,49 @@ export default function NewEventPage() {
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [actionItems, setActionItems] = useState<ActionItemInput[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
 
-  async function handleExtract() {
+  function handleExtract() {
     if (rawText.trim().length < 10) {
-      setExtractError("Paste at least 10 characters of text");
+      toast.error("Paste at least 10 characters of text");
       return;
     }
-    setExtracting(true);
-    setExtractError(null);
-    try {
-      const res = await apiClient<ExtractResponse>("/api/extract", {
-        method: "POST",
-        body: JSON.stringify({ raw_text: rawText }),
-      });
-      const e = res.event;
-      setTitle(e.title);
-      setEventType(e.event_type);
-      setStartTime(isoToLocalInput(e.start_time));
-      setEndTime(isoToLocalInput(e.end_time));
-      setIsAllDay(e.is_all_day);
-      setLocation(e.location ?? "");
-      setDescription(e.description ?? "");
-      setActionItems(e.action_items);
-      setMeta({ model: res.model_used, tokens: res.tokens_used });
-    } catch (err) {
-      setExtractError(err instanceof Error ? err.message : "Extraction failed");
-    } finally {
-      setExtracting(false);
-    }
+    // Fetch failures surface as a toast via the mutation cache (query-provider).
+    extractMutation.mutate(rawText, {
+      onSuccess: (res) => {
+        const e = res.event;
+        setTitle(e.title);
+        setEventType(e.event_type);
+        setStartTime(isoToLocalInput(e.start_time));
+        setEndTime(isoToLocalInput(e.end_time));
+        setIsAllDay(e.is_all_day);
+        setLocation(e.location ?? "");
+        setDescription(e.description ?? "");
+        setActionItems(e.action_items);
+      },
+    });
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-
-    try {
-      await apiClient("/api/events", {
-        method: "POST",
-        body: JSON.stringify({
-          title,
-          event_type: eventType,
-          start_time: toIsoOrNull(startTime),
-          end_time: toIsoOrNull(endTime),
-          is_all_day: isAllDay,
-          location: location || null,
-          description: description || null,
-          action_items: actionItems,
-          confidence: 1.0,
-        }),
-      });
-      router.push("/events");
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create event");
-      setLoading(false);
-    }
+    createMutation.mutate(
+      {
+        title,
+        event_type: eventType,
+        start_time: toIsoOrNull(startTime) as string,
+        end_time: toIsoOrNull(endTime),
+        is_all_day: isAllDay,
+        location: location || null,
+        description: description || null,
+        action_items: actionItems,
+        confidence: 1.0,
+      },
+      {
+        onSuccess: () => {
+          router.push("/events");
+          router.refresh();
+        },
+      },
+    );
   }
 
   const inputClass =
@@ -129,24 +117,13 @@ export default function NewEventPage() {
             <button
               type="button"
               onClick={handleExtract}
-              disabled={extracting || rawText.trim().length < 10}
+              disabled={extractMutation.isPending || rawText.trim().length < 10}
               className="inline-flex h-9 items-center justify-center rounded-md bg-accent px-4 py-2 text-body font-medium text-accent-foreground shadow hover:bg-accent-dark disabled:pointer-events-none disabled:opacity-50"
             >
-              {extracting ? "Extracting…" : "Extract event →"}
+              {extractMutation.isPending ? "Extracting…" : "Extract event →"}
             </button>
           </div>
 
-          {extractError && <p className="text-body text-destructive">{extractError}</p>}
-
-          {meta && (
-            <div className="space-y-1 rounded-lg border border-accent-soft bg-accent-soft/40 p-3">
-              <p className="text-eyebrow-accent">AI</p>
-              <p className="text-meta text-ink-soft">
-                Model: <span className="font-mono">{meta.model}</span> · Tokens:{" "}
-                <span className="font-mono">{meta.tokens}</span>
-              </p>
-            </div>
-          )}
         </section>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -353,14 +330,12 @@ export default function NewEventPage() {
             )}
           </div>
 
-          {error && <p className="text-body text-destructive">{error}</p>}
-
           <button
             type="submit"
-            disabled={loading}
+            disabled={createMutation.isPending}
             className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-body font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
           >
-            {loading ? "Creating…" : "Create event"}
+            {createMutation.isPending ? "Creating…" : "Create event"}
           </button>
         </form>
       </div>

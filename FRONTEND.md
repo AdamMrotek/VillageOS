@@ -62,6 +62,52 @@ The `components.json` in `packages/ui` directs the CLI to the correct location a
 
 ---
 
+## Data fetching, mutations & errors (TanStack Query)
+
+All server I/O goes through TanStack Query hooks in `src/lib/queries/*`. Components
+never call `apiClient`/`fetch` directly and never render a raw `error.message`.
+
+**1. One hook per read/write.** Reads are `useQuery`, writes are `useMutation`,
+both colocated in `src/lib/queries/`. See `src/lib/queries/events.ts`.
+
+**2. Errors are toasted centrally.** `src/components/query-provider.tsx` wires a
+`QueryCache` + `MutationCache` whose `onError` fires a `toast.error(...)`
+(via [sonner](#shadcn-components)). Components do **not** catch fetch errors for
+display. Tune the copy per hook with `meta`:
+
+```ts
+useMutation({
+  mutationFn: (id: string) => apiClient(`/api/events/${id}`, { method: "DELETE" }),
+  meta: { errorMessage: "Couldn't delete the event. Please try again." },
+});
+
+// Handling the error yourself (inline UI, custom flow)? Opt out of the toast:
+useMutation({ mutationFn, meta: { suppressErrorToast: true } });
+```
+
+Without `errorMessage`, queries show `"Couldn't load your data…"` and mutations
+show `"Something went wrong…"`. The `<Toaster />` is mounted in `(app)/layout.tsx`.
+
+**3. Success is opt-in, not automatic.** Add `toast.success(...)` in a call-site
+`onSuccess` only where it adds value. Most successes are conveyed by the UI
+updating (navigation, list invalidation, optimistic state) and need no toast.
+
+**4. Loading has two shapes:**
+
+- **Queries** → overlay the container with `<LoadingOverlay loading={isPending || isFetching} />`
+  (the container must be `relative`). See `week-grid.tsx`, `month-calendar.tsx`,
+  `prep-list.tsx`.
+- **Mutations** → drive the trigger off `mutation.isPending`: disable it and swap
+  the label, or use the shared `Button`'s `loading` prop
+  (`<Button loading={mut.isPending}>Save</Button>`), which shows a spinner and
+  disables automatically.
+
+**Anti-patterns:** `apiClient` inside a component `try/catch`; `useState` error
+strings rendered as `<p className="text-destructive">`; bespoke `loading` booleans
+alongside a mutation that already exposes `isPending`.
+
+---
+
 ## Dates & hydration
 
 Dates are resolved **on the client only**, never during SSR. The server renders in

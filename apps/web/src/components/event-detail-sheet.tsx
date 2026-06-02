@@ -58,7 +58,6 @@ function EventDetailContent({
   const toggleMut = useToggleActionItem();
   const deleteMut = useDeleteEvent();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const items = event.action_items;
   const date = new Date(event.start_time);
@@ -71,27 +70,17 @@ function EventDetailContent({
     ? "All day"
     : `${formatTime(event.start_time)}${event.end_time ? ` – ${formatTime(event.end_time)}` : ""}`;
 
-  async function handleToggle(itemId: string, done: boolean) {
-    setError(null);
-    try {
-      await toggleMut.mutateAsync({ itemId, done });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not update item");
-    }
+  // Failures surface as a toast via the mutation cache (query-provider).
+  function handleToggle(itemId: string, done: boolean) {
+    toggleMut.mutate({ itemId, done });
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!confirmDelete) {
       setConfirmDelete(true);
       return;
     }
-    setError(null);
-    try {
-      await deleteMut.mutateAsync(event.id);
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete event");
-    }
+    deleteMut.mutate(event.id, { onSuccess: onClose });
   }
 
   const doneCount = items.filter((i) => i.done).length;
@@ -153,9 +142,6 @@ function EventDetailContent({
       </div>
 
       <div className="border-t border-hairline bg-background px-6 py-3">
-        {error && (
-          <p className="mb-2 text-meta text-destructive">{error}</p>
-        )}
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
