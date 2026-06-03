@@ -285,3 +285,15 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 - `apps/api/LOGS.md` is the canonical Logs Insights query set.
 
 ---
+
+## ADR-015 — Vercel deploys only `main`, and only on web-affecting changes
+
+**Decision:** Gate the Vercel project (`apps/web`) in-repo via `apps/web/vercel.json`, on two axes:
+
+- **Branch gate** — `git.deploymentEnabled: { "**": false, "main": true }`. Only `main` deploys; every feature branch and PR (including forks) is blocked before a build is considered.
+- **Path gate** — `ignoreCommand: "npx turbo-ignore @repo/web"`. On `main`, the build is still skipped unless `@repo/web` or one of its Turborepo dependencies changed, so an `apps/api`-only push doesn't rebuild the web app.
+
+**Impact:**
+- `apps/web/vercel.json` — new; the single source of truth for when the web project deploys.
+
+---
