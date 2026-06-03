@@ -7,12 +7,28 @@
 [![CI](https://github.com/AdamMrotek/VillageOS/actions/workflows/ci.yml/badge.svg)](https://github.com/AdamMrotek/VillageOS/actions/workflows/ci.yml)
 [![Live demo](https://img.shields.io/badge/demo-village.co.uk-black)](https://village.co.uk/sign-in)
 [![Live API](https://img.shields.io/badge/api-AWS%20Lambda-FF9900?logo=awslambda&logoColor=white)](https://eep5cd3mp0.execute-api.eu-north-1.amazonaws.com/docs)
-[![ADRs](https://img.shields.io/badge/architecture-8%20ADRs-blue)](./ADL.md)
+[![ADRs](https://img.shields.io/badge/architecture-14%20ADRs-blue)](./ADL.md)
 
 **Live demo:** https://village.co.uk/sign-in
 **Live API:** https://eep5cd3mp0.execute-api.eu-north-1.amazonaws.com/docs (Swagger)
 
-![VillageOS screenshot](./docs/screenshot.png)
+## Screenshots & demo
+
+> Assets live in [`docs/media/`](./docs/media).
+
+**The app — desktop & mobile**
+
+![VillageOS — desktop and mobile](./docs/media/app.png)
+
+**Eval results**
+
+![Eval results](./docs/media/eval-results.png)
+
+**Happy-path walkthrough** (paste → extraction → calendar event):
+[`docs/media/happy-path.mp4`](./docs/media/happy-path.mp4)
+<!-- To play inline: edit this README on GitHub, drag docs/media/happy-path.mp4
+     into the editor, and replace this comment + the link above with the
+     user-images.githubusercontent.com URL GitHub generates. -->
 
 ---
 
@@ -91,6 +107,12 @@ extraction quality as a tested contract, not a vibe.
   [`evals/extraction/results.md`](./apps/api/evals/extraction/results.md)
   capturing prompt version, instructor mode, model, tokens, latency,
   cost-per-1k, and per-field pass/fail for every run.
+- **Per-provider instructor modes** (OpenAI → TOOLS, Groq → JSON) and the
+  frozen-`today` harness are documented in
+  [`apps/api/EVALS.md`](./apps/api/EVALS.md).
+- **Eval viewer** (`apps/eval-viewer`) is a Vite dashboard that renders
+  `results.jsonl` as a browsable pass/fail matrix — see the
+  [screenshot above](#screenshots--demo).
 
 ### Model selection — current findings
 
@@ -164,4 +186,4 @@ pip install -r requirements.txt && cd ../..
 pnpm dev    # Next.js :3000 · FastAPI :8000 · /docs at :8000/docs
 ```
 
-More: [`DEVELOPMENT.md`](./DEVELOPMENT.md) · [`FRONTEND.md`](./FRONTEND.md) · [`BACKEND.md`](./BACKEND.md) · [`DATABASE.md`](./DATABASE.md)
+More: [`DEVELOPMENT.md`](./DEVELOPMENT.md) · [`FRONTEND.md`](./FRONTEND.md) · [`BACKEND.md`](./BACKEND.md) · [`DATABASE.md`](./DATABASE.md) · [`INTEGRATIONS.md`](./INTEGRATIONS.md)
