@@ -25,10 +25,9 @@
 ![Eval results](./docs/media/eval-results.png)
 
 **Happy-path walkthrough** (paste → extraction → calendar event):
-[`docs/media/happy-path.mp4`](./docs/media/happy-path.mp4)
-<!-- To play inline: edit this README on GitHub, drag docs/media/happy-path.mp4
-     into the editor, and replace this comment + the link above with the
-     user-images.githubusercontent.com URL GitHub generates. -->
+
+https://github.com/user-attachments/assets/db10485a-22a0-4761-9930-797e677a1747
+
 
 ---
 
