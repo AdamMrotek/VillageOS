@@ -21,7 +21,8 @@ const newsreader = Newsreader({
 
 export const metadata: Metadata = {
   title: "VillageOS",
-  description: "Catch every event before it slips through the family WhatsApp.",
+  description:
+    "Turn school emails, newsletters, and invites into calendar events automatically.",
 };
 
 export default function RootLayout({

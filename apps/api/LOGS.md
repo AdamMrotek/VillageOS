@@ -12,6 +12,18 @@ Two log events carry the useful signal:
 | `extraction_completed` | `extraction.extract_event` (per LLM extraction) | `model`, `provider`, `llm_duration_ms`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `confidence`, `input_length_chars`, `request_id` |
 | `extraction_prompt` | `extraction.extract_event`, **DEBUG only** | full `messages` array sent to the model (system prompt + user text); logged *before* the LLM call so it survives a failed request |
 | `extraction_result` | `extraction.extract_event`, **DEBUG only** | full extracted event payload under `result` (user content — emitted only when `LOG_LEVEL=DEBUG`) |
+| `extract_metered` | `extract` route (per quota'd extract, before the LLM call) | `tier`, `daily_count`, `request_id` |
+| `quota_exceeded` | `extract` route (per-identity daily cap exceeded → `429`) | `tier`, `request_id` |
+| `demo_session_started` | `demo` route (first seed of a guest's calendar) | `user_id` (guest sub), `request_id` |
+| `demo_seeded` | `demo` route (seed inserted rows) | `event_count`, `request_id` |
+
+`extract_metered` fires once per metered call (tiers with a `daily_cap`), after
+the atomic counter increment and *before* the model runs, so `daily_count` is the
+caller's post-increment total for the day. Unlimited tiers (`pro`) skip metering
+and emit no `extract_metered`. `quota_exceeded` replaces it when the increment
+pushes the caller past the cap; the LLM never fires on that request. Both carry
+`tier`, so the funnel below splits cleanly by account type (`demo` / `free` /
+`pro`).
 
 ### Error events
 
@@ -88,6 +100,36 @@ fields @timestamp, request_id, model, confidence, input_length_chars
 | filter event = "extraction_completed" and confidence < 0.7
 | sort @timestamp desc
 | limit 20
+```
+
+### Quota funnel by tier (metered extracts vs. limit hits)
+
+How many extracts each tier ran and how many were rejected at the cap — the
+demo cost-guard signal. A rising `limited` share for `demo` means guests are
+hitting the wall (and seeing the "sign up" CTA):
+
+```sql
+fields @timestamp, tier, event
+| filter event = "extract_metered" or event = "quota_exceeded"
+| stats count(*) as total,
+        sum(event = "extract_metered") as metered,
+        sum(event = "quota_exceeded") as limited
+    by tier
+```
+
+### Demo funnel (sessions → extracts → limit hits)
+
+The guest journey in one query — how many demos started, how many extractions
+those guests ran, and how many hit the cap. A healthy demo has extracts ≫
+sessions (guests trying the product) with a small `limited` tail:
+
+```sql
+fields @timestamp, event
+| filter event in ["demo_session_started", "extract_metered", "quota_exceeded"]
+| stats sum(event = "demo_session_started") as sessions,
+        sum(event = "extract_metered" and tier = "demo") as demo_extracts,
+        sum(event = "quota_exceeded" and tier = "demo") as demo_limited
+    by bin(1d)
 ```
 
 ### Trace one request end-to-end

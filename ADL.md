@@ -297,3 +297,48 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 - `apps/web/vercel.json` — new; the single source of truth for when the web project deploys.
 
 ---
+
+## ADR-016 — Anonymous sign-in for the public demo
+
+**Decision:** The one-click "Try the demo" flow uses Supabase `signInAnonymously()` — minting a real `auth.users` row with `is_anonymous=true` and a valid JWT — rather than a shared `demo@…` credential. The landing page `/` is allow-listed for logged-out users in `proxy.ts`; the button signs in anonymously, calls an idempotent, anon-only `POST /api/demo/seed`, and routes to `/events`. Build spec in `Demo-plan.md`.
+
+**Reasons:**
+- **Isolation falls out of existing RLS.** An anonymous user is a real `auth.users` row, so the `auth.uid() = user_id` policy (ADR-010) already scopes each guest's events — no new policy, and no shared-account data bleed where one visitor sees another's calendar.
+- **API auth is unchanged.** The JWKS verification path (`verify_aud: False`) accepts an anonymous JWT as-is; `sub` is the guest's id, which `create_event` already uses. No special-casing in `auth.py`.
+- **No shared-secret token faucet.** A shared `demo@` password leaks the moment it's public and lets anyone burn LLM tokens or read others' data. Per-guest identities plus the tiered quota (ADR-017) make abuse meterable and cappable per caller.
+- **Seeding costs zero tokens.** `/api/demo/seed` inserts fully-formed `ParentEvent`s (not raw text to extract), via the user-scoped client so RLS sets `user_id`. Seed dates are computed as offsets from `date.today()` server-side, so the demo never rots into past events.
+- **Idempotent + anon-only.** The endpoint no-ops if the guest already has events and 403s a non-anonymous caller, so a refresh or a re-click can't double-seed and a registered user can't trigger it.
+
+**Out of scope (for now):** CAPTCHA on the anonymous endpoint (a toggle to add if scripted account-farming appears; the cost cap is the real backstop), anonymous→permanent account conversion (a single `updateUser` call promotes the row in place, keeping seeded data), and a cleanup cron for stale anonymous users (`ON DELETE CASCADE` already cleans their data when a row is removed).
+
+**Impact:**
+- `apps/web/src/proxy.ts` — `/` allow-listed for logged-out users.
+- `apps/web/src/app/page.tsx`, `apps/web/src/components/try-demo-button.tsx` — landing + demo entry.
+- `apps/web/src/lib/api-client.ts` — `seedDemo()` helper.
+- `apps/api/app/routers/demo.py`, `apps/api/app/services/demo_seed.py` — anon-only idempotent seed + curated relative-dated fixture.
+- **Supabase dashboard** (not in code): Anonymous sign-ins enabled under Authentication → Providers.
+
+---
+
+## ADR-017 — Per-identity tiered quota, resolved from the JWT
+
+**Decision:** The cost/abuse guard for `/api/extract` is a per-identity **daily quota expressed as tiers**, resolved from the verified JWT with no extra DB round-trip. `resolve_tier(user)`: `is_anonymous` → `demo`; otherwise `app_metadata.tier`; otherwise `free`. `TIER_POLICY` maps each tier to `{daily_cap, model}`. The check is a single atomic upsert (the `bump_usage` SQL function over a `usage_counters` ledger) that increments on attempt; over the cap returns `429`. Tier rides the extract path's `extract_metered` / `quota_exceeded` log events (ADR-014).
+
+**Reasons:**
+- **Throttle ≠ quota.** The API Gateway throttle (10 burst / 5 rps, global) is a DoS floor, not a cost cap — 5 rps sustained is ~432k LLM calls/day, all *under* the throttle, and it can't tell a recruiter from an abuser. A per-identity quota answers the different question: "has *this* caller spent its allowance for the window?"
+- **Tier lives in the `app_metadata` claim.** Supabase copies `app_metadata` into the access token, so tier is readable off the verified JWT with zero lookup; an upgrade is `admin.updateUserById(uid, {app_metadata:{tier:"pro"}})`, nothing on the hot path. Chosen over a `profiles.tier` column, which would add a per-request join or a cache. Trade-off: a tier change only takes effect on the user's next token refresh — fine for upgrades.
+- **One ledger for all tiers, atomic increment.** `usage_counters` (RLS on, **no** user policy → service-role only via `get_admin_db`) generalizes a demo-only table. The check is a single `INSERT … ON CONFLICT … DO UPDATE … RETURNING count`, so two concurrent Lambdas can't both read N and both pass the cap. Increment-on-attempt (not on-success) means hammering a `429` keeps getting rejected and the model never fires for an over-budget caller.
+- **Demo pins `model: None`, not a model name.** The demo model must match the active `LLM_PROVIDER` (prod runs groq, whose default fast model is the cheap, eval-vetted Scout). Pinning an OpenAI name like `gpt-4o-mini` would be sent to groq and fail; the 15/day cap is the real cost backstop, so `None` (use the provider default) is both correct and provider-agnostic.
+- **Existing and new users default to `free` with no backfill.** Tier is computed per request from the JWT — there is no stored role/tier column — so rolling this out is non-breaking: every registered user resolves to `free` (50/day) the moment the API deploys, and `pro` is opt-in only.
+
+**Out of scope (for now):** a Redis/Upstash token-bucket for sub-second *rate* limiting (defer; Postgres handles the daily *quota* at this scale and reuses infra we already run), API Gateway Usage Plans + API keys (a REST API v1 feature absent on HTTP APIs, and shaped for B2B partners not per-end-user JWTs), and instant downgrades (the claim-freshness lag would need a DB lookup for that path only).
+
+**Impact:**
+- `apps/api/app/core/tiers.py` — `resolve_tier`, `TIER_POLICY`, `policy_for`.
+- `apps/api/app/services/usage.py` — `bump_usage` (atomic RPC wrapper).
+- `apps/api/app/routers/extract.py` — resolve tier → quota gate → pass tier's model.
+- `supabase/migrations/20260605000000_create_usage_counters.sql` — `usage_counters` table + `bump_usage` function (execute revoked from anon/authenticated).
+- `apps/api/LOGS.md` — `extract_metered` / `quota_exceeded` events + tier-grouped funnel queries.
+- `apps/web/src/lib/api-fetch.ts`, `apps/web/src/lib/queries/events.ts` — typed `ApiError` carries the status; `useExtractEvent` surfaces a `429` as a "sign up" CTA.
+
+---
