@@ -35,8 +35,11 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/sign-up") ||
     pathname.startsWith("/forgot-password");
   const isRecoveryRoute = pathname.startsWith("/reset-password");
+  // The landing page is reachable logged-out; "Try the demo" creates an
+  // anonymous session client-side, after which proxy sees the user.
+  const isPublicRoute = pathname === "/";
 
-  if (!user && !isAuthRoute && !isRecoveryRoute) {
+  if (!user && !isAuthRoute && !isRecoveryRoute && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
     return NextResponse.redirect(url);

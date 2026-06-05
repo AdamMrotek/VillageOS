@@ -8,3 +8,12 @@ export async function apiClient<T>(path: string, init?: RequestInit): Promise<T>
   } = await supabase.auth.getSession();
   return authedFetch(session?.access_token, path, init);
 }
+
+/** Seed the current (anonymous) session's calendar with demo events.
+ *  Idempotent server-side — a no-op if the guest already has events. */
+export async function seedDemo(): Promise<{
+  seeded: boolean;
+  event_count?: number;
+}> {
+  return apiClient("/api/demo/seed", { method: "POST" });
+}

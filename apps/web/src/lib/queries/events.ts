@@ -5,7 +5,9 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
+import { ApiError } from "@/lib/api-fetch";
 import type {
   ExtractResponse,
   ParentEvent,
@@ -28,7 +30,24 @@ export function useExtractEvent() {
         method: "POST",
         body: JSON.stringify({ raw_text: rawText }),
       }),
-    meta: { errorMessage: "Couldn't extract the event. Please try again." },
+    // A 429 is the per-identity daily quota, not a failure — surface it as a
+    // sign-up CTA instead of the generic error toast. Suppress the centralized
+    // toast so we own the messaging here.
+    meta: { suppressErrorToast: true },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status === 429) {
+        toast.error(error.detail, {
+          action: {
+            label: "Sign up",
+            onClick: () => {
+              window.location.href = "/sign-up";
+            },
+          },
+        });
+        return;
+      }
+      toast.error("Couldn't extract the event. Please try again.");
+    },
   });
 }
 

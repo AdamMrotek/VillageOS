@@ -10,9 +10,17 @@ from jwt import PyJWKClient
 logger = logging.getLogger(__name__)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-_jwks_client = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
 
 _bearer = HTTPBearer()
+
+_jwks_client: PyJWKClient | None = None
+
+
+def _get_jwks_client() -> PyJWKClient:
+    global _jwks_client
+    if _jwks_client is None:
+        _jwks_client = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
+    return _jwks_client
 
 
 @dataclass
@@ -28,7 +36,7 @@ async def get_auth(
     request_id = getattr(request.state, "request_id", None)
     token = credentials.credentials
     try:
-        signing_key = _jwks_client.get_signing_key_from_jwt(token)
+        signing_key = _get_jwks_client().get_signing_key_from_jwt(token)
         payload: dict = jwt.decode(
             token,
             signing_key.key,

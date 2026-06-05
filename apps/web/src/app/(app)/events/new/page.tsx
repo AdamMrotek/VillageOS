@@ -49,7 +49,8 @@ export default function NewEventPage() {
       toast.error("Paste at least 10 characters of text");
       return;
     }
-    // Fetch failures surface as a toast via the mutation cache (query-provider).
+    // Errors (incl. a 429 quota hit → sign-up CTA) are handled in
+    // useExtractEvent's onError, so we only wire success here.
     extractMutation.mutate(rawText, {
       onSuccess: (res) => {
         const e = res.event;

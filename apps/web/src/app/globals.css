@@ -161,7 +161,10 @@
     font-weight: 500;
     line-height: 1.45;
   }
-  .text-secondary {
+  /* Renamed from .text-secondary: that name collides with the Tailwind color
+     utility generated from the --secondary token (light beige --surface-alt),
+     which won the cascade and rendered text invisible. */
+  .text-body-soft {
     font-size: 13px;
     font-weight: 400;
     line-height: 1.45;
