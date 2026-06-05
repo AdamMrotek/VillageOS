@@ -31,9 +31,7 @@ class TestBuildDemoEvents:
         assert {EventType.school, EventType.birthday, EventType.deadline} <= types
         assert any(e.is_all_day for e in events)
         # At least one cost action item (the spend-tracking angle).
-        assert any(
-            item.cost_estimate_gbp for e in events for item in e.action_items
-        )
+        assert any(item.cost_estimate_gbp for e in events for item in e.action_items)
 
     def test_events_are_high_confidence(self):
         # Curated, not extracted — confidence is pinned to 1.0.

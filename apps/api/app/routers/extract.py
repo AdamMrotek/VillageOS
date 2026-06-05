@@ -53,9 +53,7 @@ async def extract(
         )
 
     try:
-        return await extract_event(
-            body.raw_text, request_id=request_id, model=policy["model"]
-        )
+        return await extract_event(body.raw_text, request_id=request_id, model=policy["model"])
     except HTTPException:
         raise
     except Exception as e:
