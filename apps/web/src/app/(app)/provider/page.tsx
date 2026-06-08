@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import CoverDropzone from "@/components/cover-dropzone";
 import PageLayout from "@/components/page-layout";
 import { CATEGORY_LABELS } from "@/components/provider-card";
 import { useMyProvider, useUpdateMyProvider } from "@/lib/queries/providers";
@@ -40,6 +41,7 @@ function ProviderForm({ initial }: { initial: StoredProviderProfile | null }) {
   const [description, setDescription] = useState(initial?.description ?? "");
   const [location, setLocation] = useState(initial?.location ?? "");
   const [website, setWebsite] = useState(initial?.website ?? "");
+  const [imageUrl, setImageUrl] = useState(initial?.image_url ?? null);
   const [tags, setTags] = useState(initial?.tags.join(", ") ?? "");
 
   function handleSubmit(e: React.FormEvent) {
@@ -51,6 +53,7 @@ function ProviderForm({ initial }: { initial: StoredProviderProfile | null }) {
         description: description.trim() || null,
         location: location.trim() || null,
         website: website.trim() || null,
+        image_url: imageUrl,
         tags: tags
           .split(",")
           .map((t) => t.trim())
@@ -62,6 +65,8 @@ function ProviderForm({ initial }: { initial: StoredProviderProfile | null }) {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-xl space-y-4">
+      <CoverDropzone value={imageUrl} onChange={setImageUrl} />
+
       <div className="space-y-1">
         <label htmlFor="name" className="text-sm font-medium">
           Organisation name

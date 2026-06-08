@@ -12,6 +12,7 @@ export type ProviderProfileInput = {
   description: string | null;
   location: string | null;
   website: string | null;
+  image_url: string | null;
   tags: string[];
 };
 

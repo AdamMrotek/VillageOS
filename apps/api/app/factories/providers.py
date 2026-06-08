@@ -32,6 +32,7 @@ class ProviderProfileFactory:
             "description": f"Community provider number {n}.",
             "location": "Riverside",
             "website": f"https://provider-{n}.example.com",
+            "image_url": None,
             "tags": ["kids", "weekly"],
         }
         data.update(overrides)

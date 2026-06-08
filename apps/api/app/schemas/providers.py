@@ -21,6 +21,7 @@ class ProviderProfileInput(BaseModel):
     description: str | None = Field(None, description="Up to a few sentences, max 600 chars")
     location: str | None = None
     website: str | None = None
+    image_url: str | None = Field(None, description="CloudFront URL of the cover")
     tags: list[str] = []
 
     @field_validator("name")
@@ -50,3 +51,18 @@ class StoredProviderProfile(ProviderProfileInput):
     user_id: str
     created_at: datetime
     updated_at: datetime
+
+
+class CoverUploadRequest(BaseModel):
+    """The browser tells us the file's MIME type so we can sign for it."""
+
+    content_type: str
+
+
+class CoverUploadTicket(BaseModel):
+    """A presigned POST plus the URL the cover will live at once uploaded."""
+
+    url: str  # S3 endpoint to POST the multipart form to
+    fields: dict[str, str]  # signed policy fields — sent as form fields
+    image_url: str  # final CloudFront URL to persist on the profile
+    max_bytes: int  # so the client can pre-check and keep the message in sync

@@ -81,7 +81,8 @@ jobs:
               "OpenAiApiKey=${{ secrets.OPENAI_API_KEY }}" \
               "GroqApiKey=${{ secrets.GROQ_API_KEY }}" \
               "LlmProvider=${{ vars.LLM_PROVIDER }}" \
-              "AllowedOrigins=${{ vars.ALLOWED_ORIGINS }}"
+              "AllowedOrigins=${{ vars.ALLOWED_ORIGINS }}" \
+              "CoverCorsOrigins=${{ vars.COVER_CORS_ORIGINS }}"
 
       - name: Output API URL
         run: |
