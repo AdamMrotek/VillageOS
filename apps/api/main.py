@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.auth import get_current_user
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
-from app.routers import demo, events, extract, health
+from app.routers import demo, events, extract, health, providers
 
 configure_logging()
 
@@ -32,6 +32,7 @@ app.include_router(events.router)
 app.include_router(events.action_items_router)
 app.include_router(extract.router)
 app.include_router(demo.router)
+app.include_router(providers.router)
 
 
 @app.get("/api/me")

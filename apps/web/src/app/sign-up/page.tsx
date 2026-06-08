@@ -4,9 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
+type Role = "parent" | "provider";
+
 export default function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Role>("parent");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -17,7 +20,13 @@ export default function SignUpPage() {
     setError(null);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signUp({ email, password });
+    // The role lands in user_metadata; the handle_new_user trigger copies it
+    // into profiles.role on confirmation.
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { role } },
+    });
 
     if (error) {
       setError(error.message);
@@ -59,6 +68,27 @@ export default function SignUpPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <span className="text-sm font-medium">I&apos;m signing up as a</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(["parent", "provider"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setRole(option)}
+                  aria-pressed={role === option}
+                  className={`inline-flex h-9 items-center justify-center rounded-md border px-3 text-sm font-medium capitalize transition-colors ${
+                    role === option
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-surface text-ink-soft hover:text-ink"
+                  }`}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-1">
             <label htmlFor="email" className="text-sm font-medium">
               Email

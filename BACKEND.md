@@ -76,6 +76,34 @@ See [FRONTEND.md](FRONTEND.md#auth-flow-frontend-side) for how the frontend obta
 
 ---
 
+## Test factories
+
+Domain objects are built through **factories** under `app/factories/` — one `*Factory` per model — rather than hand-constructed inline in each test. A factory returns a fully-valid model with sensible defaults; callers pass keyword overrides for only the fields they care about. Add a required field to a schema and every existing test keeps compiling, because the factory fills it.
+
+The factories are dependency-free (no `factory_boy`/`polyfactory`) and serve two callers:
+
+- **Tests** — terse, resilient fixtures.
+- **Seeding** — curated builders assemble realistic catalog rows *through* the factory, so seed data can't drift out of sync with the schema.
+
+`ProviderProfileFactory` (`app/factories/providers.py`) is the reference implementation:
+
+```python
+from app.factories.providers import ProviderProfileFactory
+
+ProviderProfileFactory.build()                      # valid ProviderProfileInput, unique defaults
+ProviderProfileFactory.build(name="Oakfield")       # override any field
+ProviderProfileFactory.build_stored(user_id="…")    # StoredProviderProfile: adds user_id + timestamps
+ProviderProfileFactory.build_batch(3)               # N unique profiles
+```
+
+A monotonic sequence keeps generated names/URLs unique across calls so a batch never collides. `build_seed_providers()` returns curated, realistic providers for seeding the directory.
+
+> **Pattern going forward:** add a new factory by copying `app/factories/providers.py` — give it `build()` (valid object + overrides) and, where the model is persisted, `build_stored()` (adds server-set fields like ids/timestamps). See `tests/test_provider_factory.py` for the reference test.
+
+**Note on persisting seed data:** `provider_profiles.user_id` is a FK to `auth.users`, so a real seed script must create the owner auth users (via the service-role admin client) and pass their ids into `build_stored(user_id=…)` before inserting. The factory builds the rows; the script supplies the owners.
+
+---
+
 ## Deploying to AWS Lambda
 
 The API is packaged as a Lambda function fronted by API Gateway (HTTP API). FastAPI runs via the [Mangum](https://github.com/jordaneremieff/mangum) ASGI adapter — see `lambda_handler.py`.
