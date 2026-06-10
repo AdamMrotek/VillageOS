@@ -54,7 +54,8 @@ report are almost entirely about whether the model gets `start_time` right.
   expected `event_type`, `start_time` or `start_date`, `is_all_day`, and
   optional `action_items_keywords` (list of substrings that must all appear in
   the joined action-item descriptions, case-insensitive).
-- **Reports:** `apps/api/evals/extraction/results.md` (append-only history).
+- **Results:** `apps/api/evals/extraction/results.jsonl` (append-only history,
+  one JSON row per case × model × prompt; rendered by `apps/eval-viewer`).
 
 ### How to run
 
@@ -82,8 +83,8 @@ Useful flags:
 - `--cases case_id[,case_id]` — restrict to specific golden cases (use `.txt` stem)
 - `--prompt-versions v1[,v2]` — sweep prompt versions
 - `--mode TOOLS|JSON` — override instructor mode globally
-- `--no-append` — print only, don't write to `results.md`
-- `--notes "..."` — annotate the run header in `results.md`
+- `--no-append` — run only, don't write to `results.jsonl`
+- `--skip-grader` — skip the LLM-as-judge grader step (faster, cheaper)
 
 ### Open gaps
 

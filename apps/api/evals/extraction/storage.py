@@ -1,8 +1,8 @@
 """Append-only JSONL storage for extraction eval runs.
 
 results.jsonl is the source of truth — one row per
-(case x provider x model x prompt_version x run_id). The markdown report is
-a derived view rendered from rows in memory or filtered from this file.
+(case x provider x model x prompt_version x run_id). The eval-viewer
+(apps/eval-viewer) renders these rows as a browsable pass/fail matrix.
 
 Schema is intentionally flat-ish and forward-compatible: unknown fields on
 read are preserved, new fields can be added without migrating old rows.

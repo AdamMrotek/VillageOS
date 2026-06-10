@@ -103,7 +103,7 @@ extraction quality as a tested contract, not a vibe.
 - **Frozen "today"** in every run so relative dates ("next Saturday")
   evaluate deterministically.
 - **Append-only run log** in
-  [`evals/extraction/results.md`](./apps/api/evals/extraction/results.md)
+  [`evals/extraction/results.jsonl`](./apps/api/evals/extraction/results.jsonl)
   capturing prompt version, instructor mode, model, tokens, latency,
   cost-per-1k, and per-field pass/fail for every run.
 - **Per-provider instructor modes** (OpenAI → TOOLS, Groq → JSON) and the
@@ -138,7 +138,7 @@ testing misses.
 
 ```bash
 cd apps/api
-python -m evals.extraction.run                 # full matrix, current prompt, append to results.md
+python -m evals.extraction.run                 # full matrix, current prompt, append to results.jsonl
 python -m evals.extraction.run \
   --models openai/gpt-4o-mini \
   --cases _adhoc_football \
