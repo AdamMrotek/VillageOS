@@ -4,8 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.core.auth import get_current_user
 from app.core.db import get_admin_db
+from app.core.experiments import (
+    EXTRACTION_MODEL_FLAG,
+    assign_extraction_variant,
+    capture_assignment,
+)
 from app.core.tiers import policy_for, resolve_tier
-from app.schemas.events import ExtractRequest, ExtractResponse
+from app.schemas.events import ExperimentInfo, ExtractRequest, ExtractResponse
 from app.services.extraction import extract_event
 from app.services.usage import bump_usage
 
@@ -52,8 +57,23 @@ async def extract(
             },
         )
 
+    # A/B arm assignment (move 1). Server-authoritative + deterministic per user.
+    # Disabled (no POSTHOG_API_KEY) -> ("control", None, None): no override, so
+    # the call below is byte-for-byte the pre-experiment path.
+    variant, provider, model = assign_extraction_variant(user["sub"])
+
     try:
-        return await extract_event(body.raw_text, request_id=request_id, model=policy["model"])
+        response = await extract_event(
+            body.raw_text,
+            request_id=request_id,
+            provider=provider,
+            model=model or policy["model"],
+        )
+        capture_assignment(user["sub"], variant, provider, model)
+        response.experiment = ExperimentInfo(
+            flag=EXTRACTION_MODEL_FLAG, variant=variant, provider=provider, model=model
+        )
+        return response
     except HTTPException:
         raise
     except Exception as e:

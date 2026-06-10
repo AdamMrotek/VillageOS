@@ -100,9 +100,20 @@ class ExtractRequest(BaseModel):
     raw_text: str = Field(..., min_length=10, max_length=8000)
 
 
+class ExperimentInfo(BaseModel):
+    """Which A/B arm produced this extraction. Surfaced so the web client can tag
+    its funnel events with the server-authoritative variant (see move 1)."""
+
+    flag: str
+    variant: str  # "control" | "treatment"
+    provider: str | None = None  # "groq" | "openai"
+    model: str | None = None
+
+
 class ExtractResponse(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     event: ParentEvent
     model_used: str
     tokens_used: int
+    experiment: ExperimentInfo | None = None
