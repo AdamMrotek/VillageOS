@@ -185,4 +185,4 @@ pip install -r requirements.txt && cd ../..
 pnpm dev    # Next.js :3000 · FastAPI :8000 · /docs at :8000/docs
 ```
 
-More: [`DEVELOPMENT.md`](./DEVELOPMENT.md) · [`FRONTEND.md`](./FRONTEND.md) · [`BACKEND.md`](./BACKEND.md) · [`DATABASE.md`](./DATABASE.md) · [`INTEGRATIONS.md`](./INTEGRATIONS.md)
+More: [`DEVELOPMENT.md`](./DEVELOPMENT.md) · [`FRONTEND.md`](./FRONTEND.md) · [`BACKEND.md`](./BACKEND.md) · [`DATABASE.md`](./DATABASE.md) · [`AUTH.md`](./AUTH.md) · [`PROVIDERS.md`](./PROVIDERS.md) · [`INTEGRATIONS.md`](./INTEGRATIONS.md)

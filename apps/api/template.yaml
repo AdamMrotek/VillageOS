@@ -25,6 +25,12 @@ Parameters:
   AllowedOrigins:
     Type: String
     Default: http://localhost:3000
+  # Browser origins allowed to upload covers straight to S3. Kept separate from
+  # AllowedOrigins so the cover bucket can tolerate localhost for dev uploads
+  # without loosening the API's CORS.
+  CoverCorsOrigins:
+    Type: String
+    Default: http://localhost:3000
 
 Globals:
   Function:
@@ -47,6 +53,13 @@ Resources:
       Handler: lambda_handler.handler
       # Cost guard is enforced upstream by the HttpApi throttle (5 req/sec, 10 burst).
       # ReservedConcurrentExecutions would require an account-level concurrency quota > 10.
+      # Lets the function presign uploads. Presigned POSTs inherit the signer's
+      # IAM, so s3:PutObject on the cover bucket is all that's needed.
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub '${ProviderCoverBucket.Arn}/*'
       Environment:
         Variables:
           SUPABASE_URL: !Ref SupabaseUrl
@@ -56,6 +69,8 @@ Resources:
           GROQ_API_KEY: !Ref GroqApiKey
           LLM_PROVIDER: !Ref LlmProvider
           ALLOWED_ORIGINS: !Ref AllowedOrigins
+          PROVIDER_COVER_BUCKET: !Ref ProviderCoverBucket
+          PROVIDER_COVER_CDN_DOMAIN: !GetAtt ProviderCoverCdn.DomainName
       Events:
         ApiRoot:
           Type: HttpApi
@@ -74,6 +89,69 @@ Resources:
     Properties:
       LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
       RetentionInDays: 7
+
+  # ---- Provider covers: private bucket, readable only through CloudFront (OAC) ----
+  ProviderCoverBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:        # bucket stays fully private
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      CorsConfiguration:                     # browser uploads straight to S3 via presigned POST
+        CorsRules:
+          - AllowedMethods: [POST]
+            AllowedOrigins: !Split [',', !Ref CoverCorsOrigins]
+            AllowedHeaders: ['*']
+            MaxAge: 3000
+
+  ProviderCoverOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: villageos-provider-covers
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ProviderCoverCdn:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultCacheBehavior:
+          TargetOriginId: ProviderCoverS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6   # AWS Managed-CachingOptimized
+        Origins:
+          - Id: ProviderCoverS3Origin
+            DomainName: !GetAtt ProviderCoverBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt ProviderCoverOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''        # must be empty when using OAC
+
+  ProviderCoverBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProviderCoverBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontReadViaOAC
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${ProviderCoverBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${ProviderCoverCdn.Id}'
 
   # Observability dashboard, built entirely from the structured JSON logs
   # (no custom metrics — see ADR-014). Widgets are Logs Insights queries over
@@ -168,3 +246,6 @@ Outputs:
   DashboardUrl:
     Description: CloudWatch dashboard for extraction telemetry
     Value: !Sub 'https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/VillageOS-API'
+  ProviderCoverCdnDomain:
+    Description: CloudFront domain serving provider covers (set as PROVIDER_COVER_CDN_DOMAIN)
+    Value: !GetAtt ProviderCoverCdn.DomainName
