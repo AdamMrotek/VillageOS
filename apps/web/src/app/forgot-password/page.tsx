@@ -38,7 +38,7 @@ export default function ForgotPasswordPage() {
             Click it to choose a new password.
           </p>
           <p className="text-sm text-muted-foreground">
-            <Link href="/sign-in" className="underline underline-offset-4">
+            <Link href="/" className="underline underline-offset-4">
               Back to sign in
             </Link>
           </p>
@@ -85,7 +85,7 @@ export default function ForgotPasswordPage() {
 
           <p className="text-sm text-muted-foreground">
             Remembered it?{" "}
-            <Link href="/sign-in" className="underline underline-offset-4">
+            <Link href="/" className="underline underline-offset-4">
               Sign in
             </Link>
           </p>

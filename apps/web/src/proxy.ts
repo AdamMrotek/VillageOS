@@ -31,7 +31,6 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isAuthRoute =
-    pathname.startsWith("/sign-in") ||
     pathname.startsWith("/sign-up") ||
     pathname.startsWith("/forgot-password");
   const isRecoveryRoute = pathname.startsWith("/reset-password");
@@ -41,7 +40,9 @@ export async function proxy(request: NextRequest) {
 
   if (!user && !isAuthRoute && !isRecoveryRoute && !isPublicRoute) {
     const url = request.nextUrl.clone();
-    url.pathname = "/sign-in";
+    // The landing page ("/") hosts the sign-in form, so logged-out users
+    // bounced off a protected route land there rather than a dedicated page.
+    url.pathname = "/";
     return NextResponse.redirect(url);
   }
 

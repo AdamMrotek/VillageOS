@@ -44,7 +44,7 @@ export default function SignUpPage() {
           <p className="text-sm text-muted-foreground">
             We sent a confirmation link to <strong>{email}</strong>. Click it to activate your
             account, then{" "}
-            <Link href="/sign-in" className="underline underline-offset-4">
+            <Link href="/" className="underline underline-offset-4">
               sign in
             </Link>
             .
@@ -61,7 +61,7 @@ export default function SignUpPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Create an account</h1>
           <p className="text-sm text-muted-foreground">
             Already have one?{" "}
-            <Link href="/sign-in" className="underline underline-offset-4">
+            <Link href="/" className="underline underline-offset-4">
               Sign in
             </Link>
           </p>

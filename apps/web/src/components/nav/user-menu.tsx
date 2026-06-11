@@ -9,7 +9,7 @@ export default function UserMenu() {
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/sign-in");
+    router.push("/");
     router.refresh();
   }
 

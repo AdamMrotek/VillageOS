@@ -74,7 +74,7 @@ export default function ResetPasswordPage() {
     await supabase.auth.signOut({ scope: "global" });
     setStatus("success");
     setTimeout(() => {
-      router.push("/sign-in");
+      router.push("/");
       router.refresh();
     }, 1500);
   }
