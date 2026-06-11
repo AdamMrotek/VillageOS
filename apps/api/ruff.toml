@@ -21,9 +21,8 @@ select = [
 ignore = ["B008"]
 
 [lint.per-file-ignores]
-# `load_dotenv()` runs before app imports so env-driven config is available
-# at module import time. Standard FastAPI / eval-script pattern.
-"main.py" = ["E402"]
+# Eval scripts call `load_dotenv()` before further imports so env-driven
+# config is available at module import time.
 "evals/**.py" = ["E402", "E501"]
 # Prompt templates contain long example strings; line breaks would hurt readability.
 "app/prompts/extraction/**.py" = ["E501"]

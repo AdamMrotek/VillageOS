@@ -1,7 +1,10 @@
 """Part D — tiered quota: tier resolution, atomic bump, and the extract gate."""
 
+from typing import cast
+
 import pytest
 from fastapi import HTTPException
+from supabase import Client
 
 import app.routers.extract as extract_router
 from app.core.tiers import TIER_POLICY, policy_for, resolve_tier
@@ -57,7 +60,8 @@ class _FakeRpc:
 class TestBumpUsage:
     def test_calls_rpc_and_returns_count(self):
         fake = _FakeRpc(7)
-        assert bump_usage(fake, "user-123") == 7
+        # _FakeRpc only quacks like the two Client methods bump_usage touches.
+        assert bump_usage(cast(Client, fake), "user-123") == 7
         assert fake.called_with == ("bump_usage", {"p_user_id": "user-123"})
 
 

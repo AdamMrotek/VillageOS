@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypedDict
 
 import instructor
 from openai import AsyncOpenAI
@@ -37,7 +37,14 @@ GRADER_TEMPERATURE = 0.0
 # cost so a model's score isn't conflated with the cost of grading it.
 GRADER_PRICING_USD_PER_M: tuple[float, float] = (0.15, 0.75)
 
-_PROVIDER_CONFIG = {
+
+class _GraderProviderConfig(TypedDict):
+    base_url: str | None
+    api_key_env: str
+    mode: instructor.Mode
+
+
+_PROVIDER_CONFIG: dict[str, _GraderProviderConfig] = {
     "openai": {
         "base_url": None,
         "api_key_env": "OPENAI_API_KEY",

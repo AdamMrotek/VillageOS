@@ -3,7 +3,8 @@
 #
 # Direct (top-level) dependencies this lock is derived from:
 #   fastapi, uvicorn[standard], python-dotenv, PyJWT, cryptography, httpx,
-#   supabase, python-json-logger, instructor, openai, mangum, boto3, posthog
+#   supabase, python-json-logger, instructor, openai, mangum, boto3, posthog,
+#   pydantic-settings
 #
 # The full pinned list below is exhaustive (direct + transitive) so that
 # `pip install -r requirements.txt` resolves to a single deterministic set and
@@ -60,6 +61,7 @@ posthog==7.18.1
 propcache==0.5.2
 pycparser==3.0
 pydantic==2.13.4
+pydantic-settings==2.14.1
 pydantic_core==2.46.4
 Pygments==2.20.0
 PyJWT==2.13.0

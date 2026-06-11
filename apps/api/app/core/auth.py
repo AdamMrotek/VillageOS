@@ -1,5 +1,4 @@
 import logging
-import os
 from dataclasses import dataclass
 
 import jwt
@@ -7,9 +6,9 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
-logger = logging.getLogger(__name__)
+from app.core.config import get_settings, require
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer()
 
@@ -19,7 +18,8 @@ _jwks_client: PyJWKClient | None = None
 def _get_jwks_client() -> PyJWKClient:
     global _jwks_client
     if _jwks_client is None:
-        _jwks_client = PyJWKClient(f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json")
+        supabase_url = require(get_settings().supabase_url, "SUPABASE_URL")
+        _jwks_client = PyJWKClient(f"{supabase_url}/auth/v1/.well-known/jwks.json")
     return _jwks_client
 
 

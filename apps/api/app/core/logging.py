@@ -1,8 +1,9 @@
 import logging
-import os
 import sys
 
 from pythonjsonlogger import jsonlogger
+
+from app.core.config import get_settings
 
 
 def configure_logging() -> None:
@@ -20,4 +21,4 @@ def configure_logging() -> None:
 
     root = logging.getLogger()
     root.handlers = [handler]
-    root.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
+    root.setLevel(get_settings().log_level.upper())

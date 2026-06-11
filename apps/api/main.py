@@ -1,26 +1,24 @@
-import os
-
 from dotenv import load_dotenv
-
-load_dotenv()
-
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.auth import get_current_user
+from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
 from app.routers import demo, events, extract, health, providers
 
+# Populate os.environ from .env before the first get_settings() call below.
+# Nothing reads configuration at import time, so this no longer needs to
+# precede the app imports.
+load_dotenv()
 configure_logging()
-
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 
 app = FastAPI(title="VillageOS API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=get_settings().allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
