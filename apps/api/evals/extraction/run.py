@@ -217,7 +217,12 @@ def evaluate_case(case: GoldenCase, event: Any) -> list[FieldCheck]:
         _check("confidence>=0.7", ">= 0.7", round(event.confidence, 2), event.confidence >= 0.7)
     )
     checks.append(
-        _check("is_all_day", expected["is_all_day"], event.is_all_day, event.is_all_day == expected["is_all_day"])
+        _check(
+            "is_all_day",
+            expected["is_all_day"],
+            event.is_all_day,
+            event.is_all_day == expected["is_all_day"],
+        )
     )
 
     if expected["is_all_day"]:
