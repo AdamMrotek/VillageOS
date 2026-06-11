@@ -11,10 +11,11 @@ and production behaviour is byte-for-byte unchanged (tests + local dev stay
 green). Mirrors the lazy-singleton pattern in services/extraction.py.
 """
 
-import os
 from functools import lru_cache
 
 import posthog
+
+from app.core.config import get_settings
 
 EXTRACTION_MODEL_FLAG = "extraction-model"
 
@@ -26,16 +27,17 @@ _VARIANT_TO_CONFIG: dict[str, tuple[str, str]] = {
     "treatment": ("openai", "gpt-4o-mini"),
 }
 _DEFAULT_VARIANT = "control"
-_PROVIDER_KEY_ENV = {"groq": "GROQ_API_KEY", "openai": "OPENAI_API_KEY"}
+# Settings field holding each provider's API key (see app/core/config.py).
+_PROVIDER_KEY_ATTR = {"groq": "groq_api_key", "openai": "openai_api_key"}
 
 
 @lru_cache(maxsize=1)
 def _client() -> posthog.Posthog | None:
     """Cached PostHog client, or None when unconfigured (experiments disabled)."""
-    key = os.getenv("POSTHOG_API_KEY")
-    if not key:
+    settings = get_settings()
+    if not settings.posthog_api_key:
         return None
-    return posthog.Posthog(key, host=os.getenv("POSTHOG_HOST", "https://eu.i.posthog.com"))
+    return posthog.Posthog(settings.posthog_api_key, host=settings.posthog_host)
 
 
 def assign_extraction_variant(user_id: str) -> tuple[str, str | None, str | None]:
@@ -54,7 +56,7 @@ def assign_extraction_variant(user_id: str) -> tuple[str, str | None, str | None
     variant = flag if isinstance(flag, str) and flag in _VARIANT_TO_CONFIG else _DEFAULT_VARIANT
     provider, model = _VARIANT_TO_CONFIG[variant]
 
-    if not os.getenv(_PROVIDER_KEY_ENV[provider]):
+    if not getattr(get_settings(), _PROVIDER_KEY_ATTR[provider]):
         variant = _DEFAULT_VARIANT
         provider, model = _VARIANT_TO_CONFIG[_DEFAULT_VARIANT]
     return variant, provider, model

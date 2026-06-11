@@ -252,11 +252,8 @@ async def run_case(
     provider: str,
     model: str,
     prompt_version: str,
-    mode: str,
+    mode: str | None,
 ) -> CaseResult:
-    ident = dict(
-        case_id=case.case_id, provider=provider, model=model, prompt_version=prompt_version
-    )
     started = time.perf_counter()
     try:
         response, details = await extract_event(
@@ -269,7 +266,10 @@ async def run_case(
             return_details=True,
         )
         return CaseResult(
-            **ident,
+            case_id=case.case_id,
+            provider=provider,
+            model=model,
+            prompt_version=prompt_version,
             duration_s=time.perf_counter() - started,
             details=details,
             event_dump=response.event.model_dump(mode="json"),
@@ -278,7 +278,10 @@ async def run_case(
         )
     except Exception as exc:
         return CaseResult(
-            **ident,
+            case_id=case.case_id,
+            provider=provider,
+            model=model,
+            prompt_version=prompt_version,
             duration_s=time.perf_counter() - started,
             details=None,
             event_dump=None,

@@ -1,6 +1,10 @@
 -r requirements.txt
 # Dev/test tooling — pinned alongside requirements.txt for deterministic CI.
 iniconfig==2.3.0
+librt==0.11.0
+mypy==2.1.0
+mypy_extensions==1.1.0
+pathspec==1.1.1
 pluggy==1.6.0
 pytest==9.0.3
 pytest-asyncio==1.4.0

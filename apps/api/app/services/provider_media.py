@@ -10,13 +10,14 @@ A presigned POST (not PUT) is used so the signed policy can carry a
 of the wrong content type, and the client cannot tamper with those limits.
 """
 
-import os
 from functools import lru_cache
 from uuid import uuid4
 
 import boto3
 from botocore.config import Config
 from fastapi import HTTPException
+
+from app.core.config import get_settings, require
 
 # Only these image types are accepted; the value is the stored object extension.
 _ALLOWED_TYPES = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}
@@ -30,7 +31,7 @@ def _s3():
     # regional endpoint (bucket.s3.<region>.amazonaws.com). The global
     # s3.amazonaws.com endpoint 307-redirects for non-us-east-1 buckets, and the
     # redirect drops the CORS headers — which fails the browser upload.
-    region = os.environ.get("AWS_REGION", "eu-north-1")
+    region = get_settings().aws_region
     return boto3.client(
         "s3",
         region_name=region,
@@ -48,8 +49,9 @@ def create_cover_upload_ticket(user_id: str, content_type: str) -> dict:
     if not ext:
         raise HTTPException(status_code=400, detail="Unsupported image type")
 
-    bucket = os.environ["PROVIDER_COVER_BUCKET"]
-    cdn = os.environ["PROVIDER_COVER_CDN_DOMAIN"]
+    settings = get_settings()
+    bucket = require(settings.provider_cover_bucket, "PROVIDER_COVER_BUCKET")
+    cdn = require(settings.provider_cover_cdn_domain, "PROVIDER_COVER_CDN_DOMAIN")
     key = f"providers/{user_id}/cover-{uuid4().hex}.{ext}"
 
     presigned = _s3().generate_presigned_post(

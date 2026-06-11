@@ -1,12 +1,14 @@
 import logging
-import os
 import time
 from dataclasses import dataclass
 from datetime import date
+from typing import Literal, TypedDict, overload
 
 import instructor
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletion, ChatCompletionMessageParam
 
+from app.core.config import get_settings
 from app.prompts.extraction import get_prompt
 from app.schemas.events import ExtractResponse, ParentEvent
 from app.schemas.extraction_draft import ParentEventDraft
@@ -14,7 +16,19 @@ from app.services.extraction_date import build_date_table, draft_to_event
 
 logger = logging.getLogger("villageos.extraction")
 
-_PROVIDER_CONFIG = {
+
+class _ProviderConfig(TypedDict):
+    base_url: str | None
+    # Env var holding the key; its lowercase form is the Settings field name.
+    # The eval harness (evals/extraction/) also reads this to skip unkeyed providers.
+    api_key_env: str | None
+    default_key: str | None
+    fast_model: str
+    smart_model: str
+    mode: str
+
+
+_PROVIDER_CONFIG: dict[str, _ProviderConfig] = {
     "ollama": {
         "base_url": "http://localhost:11434/v1",
         "api_key_env": None,
@@ -49,7 +63,7 @@ _clients: dict[tuple[str, str], instructor.AsyncInstructor] = {}
 
 
 def _resolve_mode(name: str | None, provider_default: str | None = None) -> instructor.Mode:
-    name = (name or os.getenv("INSTRUCTOR_MODE") or provider_default or "TOOLS").upper()
+    name = (name or get_settings().instructor_mode or provider_default or "TOOLS").upper()
     try:
         return instructor.Mode[name]
     except KeyError as e:
@@ -67,7 +81,8 @@ def _get_client(provider: str, mode: instructor.Mode) -> instructor.AsyncInstruc
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
     cfg = _PROVIDER_CONFIG[provider]
-    api_key = (os.getenv(cfg["api_key_env"]) if cfg["api_key_env"] else None) or cfg["default_key"]
+    key_env = cfg["api_key_env"]
+    api_key = (getattr(get_settings(), key_env.lower()) if key_env else None) or cfg["default_key"]
     if not api_key:
         raise RuntimeError(
             f"Missing API key for provider '{provider}'. "
@@ -101,10 +116,10 @@ class ExtractionRunDetails:
 async def _extract_once(
     client: instructor.AsyncInstructor,
     model: str,
-    messages: list[dict],
+    messages: list[ChatCompletionMessageParam],
     version: str,
     today: date,
-) -> tuple[ParentEvent, object]:
+) -> tuple[ParentEvent, ChatCompletion]:
     """Single LLM call. For v3, ask for ParentEventDraft and combine into ParentEvent."""
     if version == "v3":
         draft, completion = await client.chat.completions.create_with_completion(
@@ -121,6 +136,34 @@ async def _extract_once(
         messages=messages,
     )
     return event, completion
+
+
+@overload
+async def extract_event(
+    raw_text: str,
+    today: date | None = None,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    prompt_version: str | None = None,
+    mode: str | None = None,
+    return_details: Literal[False] = False,
+    request_id: str | None = None,
+) -> ExtractResponse: ...
+
+
+@overload
+async def extract_event(
+    raw_text: str,
+    today: date | None = None,
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    prompt_version: str | None = None,
+    mode: str | None = None,
+    return_details: Literal[True],
+    request_id: str | None = None,
+) -> tuple[ExtractResponse, ExtractionRunDetails]: ...
 
 
 async def extract_event(
@@ -146,7 +189,7 @@ async def extract_event(
     today = today or date.today()
     version, system_prompt = get_prompt(prompt_version)
 
-    messages = [
+    messages: list[ChatCompletionMessageParam] = [
         {
             "role": "system",
             "content": system_prompt.format(
@@ -159,7 +202,7 @@ async def extract_event(
     ]
 
     pinned = provider is not None or model is not None
-    resolved_provider = (provider or os.getenv("LLM_PROVIDER", "openai")).lower()
+    resolved_provider = (provider or get_settings().llm_provider).lower()
     cfg = _PROVIDER_CONFIG[resolved_provider]
     fast_model = model or cfg["fast_model"]
     smart_model = model or cfg["smart_model"]

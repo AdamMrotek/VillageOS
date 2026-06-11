@@ -93,7 +93,9 @@ class StoredEvent(ParentEvent):
     model_config = ConfigDict(extra="ignore")
 
     id: str
-    action_items: list[StoredActionItem] = []
+    # Pydantic supports narrowing a field's type in a subclass; mypy flags it
+    # because list is invariant, but nothing writes ActionItems through the base.
+    action_items: list[StoredActionItem] = []  # type: ignore[assignment]
 
 
 class ExtractRequest(BaseModel):

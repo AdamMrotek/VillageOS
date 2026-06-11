@@ -1,3 +1,5 @@
+from typing import cast
+
 from supabase import Client
 
 
@@ -14,4 +16,5 @@ def bump_usage(admin_db: Client, user_id: str) -> int:
     over-budget request.
     """
     result = admin_db.rpc("bump_usage", {"p_user_id": user_id}).execute()
-    return result.data
+    # postgrest types .data as generic JSON; the SQL function RETURNs an int.
+    return cast(int, result.data)
