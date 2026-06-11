@@ -84,7 +84,7 @@ jobs:
               "OpenAiApiKey=${{ secrets.OPENAI_API_KEY }}" \
               "GroqApiKey=${{ secrets.GROQ_API_KEY }}" \
               "LlmProvider=${{ vars.LLM_PROVIDER }}" \
-              "PostHogApiKey=${{ secrets.POSTHOG_API_KEY }}" \
+              "PostHogApiKey=${{ vars.POSTHOG_API_KEY }}" \
               "AllowedOrigins=${{ vars.ALLOWED_ORIGINS }}" \
               "CoverCorsOrigins=${{ vars.COVER_CORS_ORIGINS }}"
 
