@@ -89,8 +89,18 @@ def _insight_specs() -> list[dict]:
                 {
                     "kind": "TrendsQuery",
                     "series": [
-                        {"kind": "EventsNode", "event": "extraction_shown", "name": "extraction_shown", "math": "total"},
-                        {"kind": "EventsNode", "event": "extraction_accepted", "name": "extraction_accepted", "math": "total"},
+                        {
+                            "kind": "EventsNode",
+                            "event": "extraction_shown",
+                            "name": "extraction_shown",
+                            "math": "total",
+                        },
+                        {
+                            "kind": "EventsNode",
+                            "event": "extraction_accepted",
+                            "name": "extraction_accepted",
+                            "math": "total",
+                        },
                     ],
                     "breakdownFilter": by_variant,
                     "dateRange": _DATE_RANGE,
@@ -128,7 +138,12 @@ def _insight_specs() -> list[dict]:
                 {
                     "kind": "TrendsQuery",
                     "series": [
-                        {"kind": "EventsNode", "event": "extraction_accepted", "name": "extraction_accepted", "math": "total"}
+                        {
+                            "kind": "EventsNode",
+                            "event": "extraction_accepted",
+                            "name": "extraction_accepted",
+                            "math": "total",
+                        }
                     ],
                     "breakdownFilter": {"breakdown": "edited_fields", "breakdown_type": "event"},
                     "dateRange": _DATE_RANGE,
@@ -188,7 +203,9 @@ def _raise(r: requests.Response) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print payloads without writing.")
     args = parser.parse_args()
 
