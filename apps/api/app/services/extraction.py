@@ -91,6 +91,11 @@ class ExtractionRunDetails:
     tokens_used: int
     prompt_tokens: int
     completion_tokens: int
+    # The same two instruments the online extraction_completed log records, so
+    # the offline eval and production read identical metrics — enabling the
+    # offline↔online cost/latency comparison.
+    llm_duration_ms: float
+    input_length_chars: int
 
 
 async def _extract_once(
@@ -236,6 +241,8 @@ async def extract_event(
             tokens_used=total_tokens,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
+            llm_duration_ms=llm_duration_ms,
+            input_length_chars=len(raw_text),
         )
         return response, details
     return response

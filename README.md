@@ -61,6 +61,10 @@ model-backed endpoint observable in production.
   as a parameterised matrix across providers, models, prompt versions,
   and instructor modes; per-field pass/fail, latency, and cost-per-1k
   tracked in an append-only log. See [Evaluation](#evaluation).
+- **Online experiment on the live LLM.** A server-assigned, feature-flagged
+  A/B on the extraction model, with field-edit rate as the primary metric
+  and latency/cost guardrails — closing the loop from offline eval to real
+  user behaviour. See [Experimentation](#experimentation).
 - **Architecture documented as it's built.** Numbered ADRs in
   [`ADL.md`](./ADL.md) record the trade-offs (monorepo, FastAPI vs Next
   API routes, Tailwind v4, shared `packages/ui`, …).
@@ -144,6 +148,35 @@ python -m evals.extraction.run \
   --cases _adhoc_football \
   --no-append                                  # one model, one case, print only
 ```
+
+---
+
+## Experimentation
+
+Evals prove a model is correct offline; experiments measure whether real users
+*act* on its output. VillageOS runs a feature-flagged **A/B on the extraction
+model** (`groq/llama-4-scout` vs `openai/gpt-4o-mini`) in production — closing the
+loop from offline golden eval to online behaviour. Full methodology in
+[`apps/api/EXPERIMENTS.md`](./apps/api/EXPERIMENTS.md); the live experiment in
+[`extraction_model_ab.md`](./apps/api/evals/experiments/extraction_model_ab.md).
+
+- **Server-authoritative assignment.** The arm is chosen on the API
+  (`app/core/experiments.py`) via a PostHog flag keyed on the user id —
+  tamper-proof, deterministic, logged next to the extraction telemetry. Disabled
+  cleanly when no key is set; never bypasses the per-tier quota guard.
+- **Primary metric: field-edit rate, not binary accept-rate.** The mean number of
+  fields a user changes between draft and created event — a count carries far more
+  signal per observation than a binary, the only honest readout at portfolio
+  traffic, and its per-field breakdown should implicate `start_time`, the same
+  field the offline eval flags.
+- **Guardrails for free.** p95 latency and tokens-per-1k-chars come straight from
+  the `extraction_completed` log already emitted on every request.
+- **Offline ↔ online validation.** Quality (golden correctness ↔ real edits), cost,
+  and latency are each measured both ways; the eval now logs the *identical*
+  `llm_duration_ms` / `input_length_chars` instruments production does.
+- **Honest about power.** A portfolio app won't hit significance — the artifact is
+  the correct design and a readout that states the observed direction and the
+  sample it would need, not a manufactured `p < 0.05`.
 
 ---
 

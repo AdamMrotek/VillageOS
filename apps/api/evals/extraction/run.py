@@ -217,7 +217,12 @@ def evaluate_case(case: GoldenCase, event: Any) -> list[FieldCheck]:
         _check("confidence>=0.7", ">= 0.7", round(event.confidence, 2), event.confidence >= 0.7)
     )
     checks.append(
-        _check("is_all_day", expected["is_all_day"], event.is_all_day, event.is_all_day == expected["is_all_day"])
+        _check(
+            "is_all_day",
+            expected["is_all_day"],
+            event.is_all_day,
+            event.is_all_day == expected["is_all_day"],
+        )
     )
 
     if expected["is_all_day"]:
@@ -380,6 +385,13 @@ def result_to_row(r: CaseResult, run_id: str, expected: dict) -> dict:
         "rule_total": len(rule_checks),
         "rule_all_passed": r.all_passed,
         "latency_s": round(r.duration_s, 3),
+        # llm_duration_ms is the same instrument production logs (LLM call only),
+        # so it's comparable to online; input_length_chars lets the readout
+        # normalise tokens per 1k chars. Both feed the offline↔online cost/latency
+        # comparison in the experiment write-up. latency_s stays as the
+        # end-to-end wall-clock for reference.
+        "llm_duration_ms": d.llm_duration_ms if d else None,
+        "input_length_chars": d.input_length_chars if d else None,
         "tokens_used": d.tokens_used if d else None,
         "prompt_tokens": d.prompt_tokens if d else None,
         "completion_tokens": d.completion_tokens if d else None,

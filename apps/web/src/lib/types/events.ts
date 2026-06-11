@@ -46,8 +46,16 @@ export type StoredEvent = Omit<ParentEvent, "action_items"> & {
   action_items: ActionItem[];
 };
 
+export type ExperimentInfo = {
+  flag: string;
+  variant: string; // "control" | "treatment"
+  provider: string | null;
+  model: string | null;
+};
+
 export type ExtractResponse = {
   event: ParentEvent;
   model_used: string;
   tokens_used: number;
+  experiment: ExperimentInfo | null;
 };

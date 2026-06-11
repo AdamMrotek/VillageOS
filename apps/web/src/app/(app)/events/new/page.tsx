@@ -1,16 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
+import { diffExtractionFields } from "@/lib/extraction-diff";
 import { useCreateEvent, useExtractEvent } from "@/lib/queries/events";
 import {
   EVENT_FIELD_LIMITS,
   EVENT_TYPES,
   type ActionItemInput,
   type EventType,
+  type ExperimentInfo,
+  type ParentEvent,
 } from "@/lib/types/events";
 import PageLayout from "@/components/page-layout";
+
+// Inlined NEXT_PUBLIC_* at build time. Gates the funnel captures so a build
+// without a PostHog key stays silent instead of warning on every extract.
+const PH_ENABLED = !!process.env.NEXT_PUBLIC_POSTHOG_KEY;
 
 function toIsoOrNull(value: string): string | null {
   if (!value) return null;
@@ -29,9 +37,16 @@ function isoToLocalInput(iso: string | null): string {
 
 export default function NewEventPage() {
   const router = useRouter();
+  const posthog = usePostHog();
 
   const extractMutation = useExtractEvent();
   const createMutation = useCreateEvent();
+
+  // The draft + assigned arm from the last extraction, kept in refs so the
+  // create handler can diff what the user submitted against what the model
+  // produced (the per-field edit-rate metric) without re-rendering on change.
+  const draftRef = useRef<ParentEvent | null>(null);
+  const experimentRef = useRef<ExperimentInfo | null>(null);
 
   const [rawText, setRawText] = useState("");
 
@@ -62,31 +77,54 @@ export default function NewEventPage() {
         setLocation(e.location ?? "");
         setDescription(e.description ?? "");
         setActionItems(e.action_items);
+
+        // Exposure: the draft is now on screen. Stash it (pre-edit) + the arm
+        // so the create handler can compute the edit diff against it.
+        draftRef.current = e;
+        experimentRef.current = res.experiment;
+        if (PH_ENABLED) {
+          posthog.capture("extraction_shown", {
+            variant: res.experiment?.variant,
+            provider: res.experiment?.provider,
+            model: res.experiment?.model,
+          });
+        }
       },
     });
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    createMutation.mutate(
-      {
-        title,
-        event_type: eventType,
-        start_time: toIsoOrNull(startTime) as string,
-        end_time: toIsoOrNull(endTime),
-        is_all_day: isAllDay,
-        location: location || null,
-        description: description || null,
-        action_items: actionItems,
-        confidence: 1.0,
+    const submitted: ParentEvent = {
+      title,
+      event_type: eventType,
+      start_time: toIsoOrNull(startTime) as string,
+      end_time: toIsoOrNull(endTime),
+      is_all_day: isAllDay,
+      location: location || null,
+      description: description || null,
+      action_items: actionItems,
+      confidence: 1.0,
+    };
+    createMutation.mutate(submitted, {
+      onSuccess: () => {
+        // Conversion + primary metric: only when this event came from an
+        // extraction (manual entries have no draft to diff against).
+        const draft = draftRef.current;
+        if (PH_ENABLED && draft) {
+          const editedFields = diffExtractionFields(draft, submitted);
+          posthog.capture("extraction_accepted", {
+            variant: experimentRef.current?.variant,
+            provider: experimentRef.current?.provider,
+            model: experimentRef.current?.model,
+            n_edited: editedFields.length,
+            edited_fields: editedFields,
+          });
+        }
+        router.push("/events");
+        router.refresh();
       },
-      {
-        onSuccess: () => {
-          router.push("/events");
-          router.refresh();
-        },
-      },
-    );
+    });
   }
 
   const inputClass =
