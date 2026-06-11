@@ -22,6 +22,12 @@ Parameters:
     Type: String
     Default: openai
     AllowedValues: [openai, groq]
+  # PostHog project API key (phc_...) for server-side experiment assignment.
+  # Blank disables the experiment: every caller gets the prod default (control).
+  PostHogApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
   AllowedOrigins:
     Type: String
     Default: http://localhost:3000
@@ -68,6 +74,8 @@ Resources:
           OPENAI_API_KEY: !Ref OpenAiApiKey
           GROQ_API_KEY: !Ref GroqApiKey
           LLM_PROVIDER: !Ref LlmProvider
+          POSTHOG_API_KEY: !Ref PostHogApiKey
+          POSTHOG_HOST: https://eu.i.posthog.com
           ALLOWED_ORIGINS: !Ref AllowedOrigins
           PROVIDER_COVER_BUCKET: !Ref ProviderCoverBucket
           PROVIDER_COVER_CDN_DOMAIN: !GetAtt ProviderCoverCdn.DomainName
