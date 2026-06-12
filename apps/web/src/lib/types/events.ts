@@ -59,3 +59,12 @@ export type ExtractResponse = {
   tokens_used: number;
   experiment: ExperimentInfo | null;
 };
+
+// At least one of the two must be present (the API enforces it). With an image
+// attached, rawText is an optional caption and the 10-char floor doesn't apply.
+export type ExtractInput = {
+  rawText?: string;
+  imageDataUrl?: string;
+};
+
+export type ExtractionInputType = "text" | "image" | "text+image";

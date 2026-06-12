@@ -1,6 +1,27 @@
+import { useState } from "react";
 import type { EvalRow } from "../types";
 import { formatCost } from "../lib/results";
 import { Score } from "./Score";
+
+// public/golden is a symlink to apps/api/tests/golden; the image extension
+// varies per case (.jpg/.png/...), so walk the candidates until one loads.
+const GOLDEN_EXTS = ["jpg", "png", "jpeg", "webp"];
+
+function GoldenImage({ caseId }: { caseId: string }) {
+  const [extIdx, setExtIdx] = useState(0);
+  if (extIdx >= GOLDEN_EXTS.length) return null;
+  const src = `/golden/${caseId}.${GOLDEN_EXTS[extIdx]}`;
+  return (
+    <a href={src} target="_blank" rel="noreferrer" className="block w-fit">
+      <img
+        src={src}
+        alt={`Golden input image for ${caseId}`}
+        onError={() => setExtIdx((i) => i + 1)}
+        className="max-h-72 rounded-lg border border-hairline"
+      />
+    </a>
+  );
+}
 
 function fmt(value: unknown): string {
   if (value === null || value === undefined) return "—";
@@ -21,6 +42,9 @@ function Contender({ row }: { row: EvalRow }) {
           {row.rule_pass_count}/{row.rule_total} rules · {row.tokens_used ?? 0}{" "}
           tok · {row.latency_s?.toFixed(2) ?? "?"}s ·{" "}
           {formatCost(row.extraction_cost_usd)}
+          {row.input_type === "image" && row.image_bytes != null
+            ? ` · img ${Math.round(row.image_bytes / 1024)} KB`
+            : ""}
         </span>
       )}
       {row.grader && <Score value={row.grader.score} />}
@@ -112,10 +136,16 @@ export function CaseDetail({
   caseId: string;
   rows: EvalRow[];
 }) {
+  const isVision = rows.some((r) => r.input_type === "image");
   return (
     <details className="group mt-4 overflow-hidden rounded-xl border border-hairline bg-background open:bg-surface">
       <summary className="flex cursor-pointer items-center gap-4 px-5 py-3.5 list-none [&::-webkit-details-marker]:hidden">
         <span className="text-mono font-semibold">{caseId}</span>
+        {isVision && (
+          <span className="rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] bg-warm-surface text-warm">
+            Vision
+          </span>
+        )}
         <span className="text-meta">{rows.length} contender(s)</span>
         <span className="ml-auto text-mono text-ink-mute group-open:hidden">
           +
@@ -125,6 +155,12 @@ export function CaseDetail({
         </span>
       </summary>
       <div className="px-5 pb-5">
+        {isVision && (
+          <div className="mb-4 pt-2">
+            <div className="text-eyebrow mb-2">Input image</div>
+            <GoldenImage caseId={caseId} />
+          </div>
+        )}
         {rows.map((r) => (
           <Contender key={`${r.provider}/${r.model}`} row={r} />
         ))}

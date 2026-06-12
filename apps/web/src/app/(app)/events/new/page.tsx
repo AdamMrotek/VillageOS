@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { diffExtractionFields } from "@/lib/extraction-diff";
+import { downscaleImageToDataUrl } from "@/lib/image-downscale";
 import { useCreateEvent, useExtractEvent } from "@/lib/queries/events";
 import {
   EVENT_FIELD_LIMITS,
@@ -12,6 +13,7 @@ import {
   type ActionItemInput,
   type EventType,
   type ExperimentInfo,
+  type ExtractionInputType,
   type ParentEvent,
 } from "@/lib/types/events";
 import PageLayout from "@/components/page-layout";
@@ -47,8 +49,15 @@ export default function NewEventPage() {
   // produced (the per-field edit-rate metric) without re-rendering on change.
   const draftRef = useRef<ParentEvent | null>(null);
   const experimentRef = useRef<ExperimentInfo | null>(null);
+  const inputTypeRef = useRef<ExtractionInputType | null>(null);
 
   const [rawText, setRawText] = useState("");
+  // Downscaled to JPEG in the browser and sent inline — never uploaded to
+  // storage (see lib/image-downscale.ts).
+  const [image, setImage] = useState<{ dataUrl: string; bytes: number; name: string } | null>(
+    null,
+  );
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [title, setTitle] = useState("");
   const [eventType, setEventType] = useState<EventType>("other");
@@ -59,14 +68,29 @@ export default function NewEventPage() {
   const [description, setDescription] = useState("");
   const [actionItems, setActionItems] = useState<ActionItemInput[]>([]);
 
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Reset so re-picking the same file fires onChange again.
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const downscaled = await downscaleImageToDataUrl(file);
+      setImage({ ...downscaled, name: file.name });
+    } catch {
+      toast.error("Couldn't read that image — try a JPEG or PNG, or a screenshot.");
+    }
+  }
+
   function handleExtract() {
-    if (rawText.trim().length < 10) {
+    const text = rawText.trim();
+    if (!image && text.length < 10) {
       toast.error("Paste at least 10 characters of text");
       return;
     }
+    const inputType: ExtractionInputType = image ? (text ? "text+image" : "image") : "text";
     // Errors (incl. a 429 quota hit → sign-up CTA) are handled in
     // useExtractEvent's onError, so we only wire success here.
-    extractMutation.mutate(rawText, {
+    extractMutation.mutate({ rawText: text || undefined, imageDataUrl: image?.dataUrl }, {
       onSuccess: (res) => {
         const e = res.event;
         setTitle(e.title);
@@ -82,11 +106,13 @@ export default function NewEventPage() {
         // so the create handler can compute the edit diff against it.
         draftRef.current = e;
         experimentRef.current = res.experiment;
+        inputTypeRef.current = inputType;
         if (PH_ENABLED) {
           posthog.capture("extraction_shown", {
             variant: res.experiment?.variant,
             provider: res.experiment?.provider,
             model: res.experiment?.model,
+            input_type: inputType,
           });
         }
       },
@@ -117,6 +143,7 @@ export default function NewEventPage() {
             variant: experimentRef.current?.variant,
             provider: experimentRef.current?.provider,
             model: experimentRef.current?.model,
+            input_type: inputTypeRef.current,
             n_edited: editedFields.length,
             edited_fields: editedFields,
           });
@@ -136,27 +163,72 @@ export default function NewEventPage() {
         <section className="space-y-4">
           <div className="space-y-2">
             <p className="text-eyebrow-accent">AI extraction</p>
-            <h2 className="text-heading text-ink">Paste text</h2>
+            <h2 className="text-heading text-ink">Paste text or add a photo</h2>
             <p className="text-meta">
-              WhatsApp thread, school newsletter, email — anything with an event.
+              WhatsApp thread, school newsletter, email — or a photo of a leaflet
+              or a screenshot. Anything with an event.
             </p>
           </div>
 
           <textarea
             value={rawText}
             onChange={(e) => setRawText(e.target.value)}
-            rows={14}
+            rows={image ? 6 : 14}
             maxLength={8000}
-            placeholder="Reminder from school: Bake Sale this Friday 24th May at 3pm in the school hall. Please bring £2 in a labelled envelope."
+            placeholder={
+              image
+                ? "Optional: add context, e.g. which child this is for."
+                : "Reminder from school: Bake Sale this Friday 24th May at 3pm in the school hall. Please bring £2 in a labelled envelope."
+            }
             className="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          {image ? (
+            <div className="flex items-center gap-3 rounded-md border border-hairline bg-surface p-2">
+              {/* Plain <img>: the src is an in-memory data URL, not a remote
+                  asset, so next/image optimization doesn't apply. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={image.dataUrl}
+                alt="Attached leaflet or screenshot"
+                className="h-16 w-16 rounded object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-body text-ink">{image.name}</p>
+                <p className="text-meta">~{Math.max(1, Math.round(image.bytes / 1024))} KB</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImage(null)}
+                className="text-meta hover:text-destructive"
+              >
+                Remove
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex h-9 w-full items-center justify-center rounded-md border border-dashed border-hairline bg-surface px-4 text-body text-ink-soft hover:border-accent hover:text-ink"
+            >
+              Photograph a leaflet or upload a screenshot
+            </button>
+          )}
 
           <div className="flex items-center justify-between">
             <span className="text-meta">{rawText.length} / 8000</span>
             <button
               type="button"
               onClick={handleExtract}
-              disabled={extractMutation.isPending || rawText.trim().length < 10}
+              disabled={extractMutation.isPending || (!image && rawText.trim().length < 10)}
               className="inline-flex h-9 items-center justify-center rounded-md bg-accent px-4 py-2 text-body font-medium text-accent-foreground shadow hover:bg-accent-dark disabled:pointer-events-none disabled:opacity-50"
             >
               {extractMutation.isPending ? "Extracting…" : "Extract event →"}

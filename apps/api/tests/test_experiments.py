@@ -48,40 +48,53 @@ class TestDisabled:
         capture_assignment("u1", "control", None, None)
 
 
-class TestAssignment:
-    def test_treatment_maps_to_openai(self, monkeypatch):
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-        _use_client(monkeypatch, _FakeClient("treatment"))
-        assert assign_extraction_variant("u1") == ("treatment", "openai", "gpt-4o-mini")
+SCOUT = "meta-llama/llama-4-scout-17b-16e-instruct"
 
-    def test_control_maps_to_groq_scout(self, monkeypatch):
-        monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
+
+class TestAssignment:
+    """ADR-019: each arm is a provider stack serving both input types."""
+
+    def test_control_maps_to_openai_stack(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         _use_client(monkeypatch, _FakeClient("control"))
-        variant, provider, model = assign_extraction_variant("u1")
-        assert (variant, provider) == ("control", "groq")
-        assert model == "meta-llama/llama-4-scout-17b-16e-instruct"
+        assert assign_extraction_variant("u1") == ("control", "openai", "gpt-4o-mini")
+        assert assign_extraction_variant("u1", vision=True) == ("control", "openai", "gpt-4o")
+
+    def test_treatment_maps_to_groq_stack(self, monkeypatch):
+        monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
+        _use_client(monkeypatch, _FakeClient("treatment"))
+        assert assign_extraction_variant("u1") == ("treatment", "groq", SCOUT)
+        assert assign_extraction_variant("u1", vision=True) == ("treatment", "groq", SCOUT)
 
     def test_unknown_flag_value_falls_back_to_control(self, monkeypatch):
-        monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         _use_client(monkeypatch, _FakeClient(None))  # flag off / not found
         assert assign_extraction_variant("u1")[0] == "control"
 
     def test_same_flag_value_is_stable_across_calls(self, monkeypatch):
         # Determinism is PostHog's bucketing; here we assert our mapping is pure.
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
         _use_client(monkeypatch, _FakeClient("treatment"))
         assert assign_extraction_variant("u1") == assign_extraction_variant("u1")
 
 
 class TestProviderKeyGuard:
-    """An arm whose provider key is unset must downgrade to control, not 500."""
+    """An arm whose provider key is unset must downgrade, not 500."""
 
-    def test_treatment_without_openai_key_downgrades(self, monkeypatch):
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
+    def test_treatment_without_groq_key_downgrades_to_control(self, monkeypatch):
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         _use_client(monkeypatch, _FakeClient("treatment"))
         variant, provider, _ = assign_extraction_variant("u1")
-        assert (variant, provider) == ("control", "groq")
+        assert (variant, provider) == ("control", "openai")
+
+    def test_both_keys_missing_falls_through_to_passthrough(self, monkeypatch):
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        _use_client(monkeypatch, _FakeClient("treatment"))
+        # No usable arm: behave like the disabled experiment so the router
+        # applies no override instead of 500ing in _get_client.
+        assert assign_extraction_variant("u1") == ("control", None, None)
 
 
 class TestCapture:

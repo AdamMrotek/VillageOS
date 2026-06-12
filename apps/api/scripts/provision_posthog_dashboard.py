@@ -53,8 +53,9 @@ load_dotenv(_API_ROOT / ".env")
 
 DASHBOARD_NAME = "Extraction model A/B"
 DASHBOARD_DESCRIPTION = (
-    "Online readout for the extraction model experiment (control: groq llama-4-scout "
-    "vs treatment: openai gpt-4o-mini). See apps/api/EXPERIMENTS.md. Provisioned by "
+    "Online readout for the extraction provider-stack experiment (control: openai "
+    "gpt-4o-mini text + gpt-4o vision vs treatment: groq llama-4-scout for both paths, "
+    "ADR-019). See apps/api/EXPERIMENTS.md. Provisioned by "
     "scripts/provision_posthog_dashboard.py — edit there, not here."
 )
 _DATE_RANGE = {"date_from": "-90d"}

@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-fetch";
 import type {
+  ExtractInput,
   ExtractResponse,
   ParentEvent,
   StoredEvent,
@@ -25,10 +26,13 @@ export function useEvents() {
 
 export function useExtractEvent() {
   return useMutation({
-    mutationFn: (rawText: string) =>
+    mutationFn: ({ rawText, imageDataUrl }: ExtractInput) =>
       apiClient<ExtractResponse>("/api/extract", {
         method: "POST",
-        body: JSON.stringify({ raw_text: rawText }),
+        body: JSON.stringify({
+          raw_text: rawText ?? null,
+          image_data_url: imageDataUrl ?? null,
+        }),
       }),
     // A 429 is the per-identity daily quota, not a failure — surface it as a
     // sign-up CTA instead of the generic error toast. Suppress the centralized
