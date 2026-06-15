@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { diffExtractionFields } from "@/lib/extraction-diff";
+import { ApiError } from "@/lib/api-fetch";
+import { createClient } from "@/lib/supabase/client";
+import { useIsDemo } from "@/lib/hooks/use-is-demo";
 import { useCreateEvent, useExtractEvent } from "@/lib/queries/events";
 import type {
   ExperimentInfo,
@@ -56,6 +59,7 @@ export default function EventExtraction() {
 
   const extractMutation = useExtractEvent();
   const createMutation = useCreateEvent();
+  const { data: isDemo } = useIsDemo();
 
   // Cancelling an in-flight extract can't abort the request, so guard the
   // success/error handlers from yanking the user back out of "capture".
@@ -68,6 +72,24 @@ export default function EventExtraction() {
   // EventForm initializes its field state from `initial` once; bumping the key
   // remounts it so a new draft (or a fresh manual form) loads cleanly.
   const [formKey, setFormKey] = useState(0);
+
+  // The daily-quota (429) message. Copy + CTA differ by account type: demo
+  // accounts are nudged to create a real account, free accounts to Pro.
+  const limitToast = isDemo
+    ? {
+        message: "Demo limit reached — create a free account to keep going.",
+        cta: "Create account",
+        href: "/sign-up",
+        // End the anonymous demo session before sending them to sign-up.
+        signOut: true,
+      }
+    : {
+        message: "Daily limit reached — upgrade for more.",
+        cta: "Upgrade to Pro",
+        // TODO: point at the billing/upgrade flow once it exists.
+        href: "/settings",
+        signOut: false,
+      };
 
   function handleExtract() {
     const text = rawText.trim();
@@ -99,8 +121,27 @@ export default function EventExtraction() {
             });
           }
         },
-        onError: () => {
-          if (!cancelledRef.current) setPhase("capture");
+        onError: (error) => {
+          if (cancelledRef.current) return;
+          setPhase("capture");
+          if (error instanceof ApiError && error.status === 429) {
+            // White (default) variant, sticky — stays until dismissed.
+            // Widen past sonner's default 356px via the per-toast --width var.
+            toast(limitToast.message, {
+              id: "extract-limit",
+              duration: Infinity,
+              style: { "--width": "440px" } as React.CSSProperties,
+              action: {
+                label: limitToast.cta,
+                onClick: async () => {
+                  if (limitToast.signOut) {
+                    await createClient().auth.signOut();
+                  }
+                  window.location.href = limitToast.href;
+                },
+              },
+            });
+          }
         },
       },
     );
@@ -135,7 +176,7 @@ export default function EventExtraction() {
             edited_fields: editedFields,
           });
         }
-        router.push("/events");
+        router.push("/calendar");
         router.refresh();
       },
     });

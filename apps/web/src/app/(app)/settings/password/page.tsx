@@ -64,8 +64,8 @@ export default function ChangePasswordPage() {
             Other devices have been signed out. You&apos;re still signed in here.
           </p>
           <p className="text-sm text-muted-foreground">
-            <Link href="/events" className="underline underline-offset-4">
-              Back to events
+            <Link href="/calendar" className="underline underline-offset-4">
+              Back to calendar
             </Link>
           </p>
         </div>

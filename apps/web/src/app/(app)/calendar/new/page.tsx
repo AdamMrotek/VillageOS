@@ -3,7 +3,7 @@ import PageLayout from "@/components/page-layout";
 
 export default function NewEventPage() {
   return (
-    <PageLayout title="New event" backHref="/events" backLabel="Back to events">
+    <PageLayout title="New event" backHref="/calendar" backLabel="Back to calendar">
       <EventExtraction />
     </PageLayout>
   );

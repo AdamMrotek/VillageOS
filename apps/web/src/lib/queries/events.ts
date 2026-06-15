@@ -34,22 +34,12 @@ export function useExtractEvent() {
           image_data_url: imageDataUrl ?? null,
         }),
       }),
-    // A 429 is the per-identity daily quota, not a failure — surface it as a
-    // sign-up CTA instead of the generic error toast. Suppress the centralized
-    // toast so we own the messaging here.
+    // A 429 is the per-identity daily quota, not a failure — EventExtraction
+    // surfaces it as a persistent sign-up banner, so stay silent here (no
+    // toast). Other errors still get the generic toast.
     meta: { suppressErrorToast: true },
     onError: (error) => {
-      if (error instanceof ApiError && error.status === 429) {
-        toast.error(error.detail, {
-          action: {
-            label: "Sign up",
-            onClick: () => {
-              window.location.href = "/sign-up";
-            },
-          },
-        });
-        return;
-      }
+      if (error instanceof ApiError && error.status === 429) return;
       toast.error("Couldn't extract the event. Please try again.");
     },
   });

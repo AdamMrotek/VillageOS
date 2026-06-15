@@ -98,9 +98,10 @@ export default function ExtractMessage({
     <div className="w-full">
       <div className="space-y-2">
         <p className="text-eyebrow-accent">AI extraction</p>
-        <h2 className="text-heading text-ink">Paste text</h2>
+        <h2 className="text-heading text-ink">Paste text or add a photo</h2>
         <p className="max-w-[480px] text-pretty text-meta">
-          WhatsApp thread, school newsletter, email — anything with an event.
+          WhatsApp thread, school newsletter, email, or a photo of a flyer —
+          anything with an event.
         </p>
       </div>
 
