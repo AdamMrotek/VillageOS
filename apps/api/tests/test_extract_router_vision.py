@@ -52,9 +52,7 @@ def harness(monkeypatch):
     monkeypatch.setattr(extract_router, "bump_usage", lambda db, uid: 1)
     monkeypatch.setattr(extract_router, "extract_event", fake_extract_event)
     monkeypatch.setattr(extract_router, "assign_extraction_variant", fake_assign)
-    monkeypatch.setattr(
-        extract_router, "capture_assignment", lambda *a: calls.captures.append(a)
-    )
+    monkeypatch.setattr(extract_router, "capture_assignment", lambda *a: calls.captures.append(a))
     return calls
 
 

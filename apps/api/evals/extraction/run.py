@@ -108,7 +108,9 @@ class GoldenCase:
     def grader_text(self) -> str:
         """What the text-only LLM judge reads as 'the input'. Image cases carry
         a faithful transcript in expected["transcript"] for this purpose."""
-        return self.raw_text or self.expected.get("transcript") or f"[image-only case {self.case_id}]"
+        return (
+            self.raw_text or self.expected.get("transcript") or f"[image-only case {self.case_id}]"
+        )
 
 
 @dataclass
@@ -555,7 +557,9 @@ async def run_matrix(
             combo_cases = [c for c in cases if c.image_path is None]
             for c in cases:
                 if c.image_path is not None:
-                    print(f"     [skip] {c.case_id} — image case, {provider}/{model} is not vision-capable")
+                    print(
+                        f"     [skip] {c.case_id} — image case, {provider}/{model} is not vision-capable"
+                    )
         tasks = [run_case(c, provider, model, version, mode) for c in combo_cases]
         for r in await asyncio.gather(*tasks):
             suffix = f" — {r.error}" if r.error else ""

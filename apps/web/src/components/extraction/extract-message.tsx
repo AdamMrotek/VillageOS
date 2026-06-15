@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { toast } from "sonner";
 import { downscaleImageToDataUrl } from "@/lib/image-downscale";
+import { useIsDemo } from "@/lib/hooks/use-is-demo";
 import ShowMoreText from "@/components/show-more-text";
 
 // The attached photo as it lives in the capture flow: downscaled to JPEG in
@@ -54,6 +55,8 @@ export default function ExtractMessage({
   onEditSource,
 }: ExtractMessageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Starter examples are an onboarding aid — only surface them in the demo.
+  const { data: isDemo } = useIsDemo();
 
   async function ingestImageFile(file: File) {
     try {
@@ -182,7 +185,7 @@ export default function ExtractMessage({
         </div>
       </div>
 
-      {!image && (
+      {!image && isDemo && (
         <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
           <span className="mr-1 text-meta uppercase tracking-wide text-ink-mute">Try</span>
           {EXAMPLES.map((ex) => (

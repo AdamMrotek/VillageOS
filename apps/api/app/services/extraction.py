@@ -143,8 +143,7 @@ def _get_client(provider: str, mode: instructor.Mode) -> instructor.AsyncInstruc
         api_key = getattr(get_settings(), cfg.api_key_env.lower()) or api_key
     if not api_key:
         raise RuntimeError(
-            f"Missing API key for provider '{provider}'. "
-            f"Set {cfg.api_key_env} in the environment."
+            f"Missing API key for provider '{provider}'. Set {cfg.api_key_env} in the environment."
         )
 
     openai_client = AsyncOpenAI(base_url=cfg.base_url, api_key=api_key)
