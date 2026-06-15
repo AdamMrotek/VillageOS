@@ -342,3 +342,47 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 - `apps/web/src/lib/api-fetch.ts`, `apps/web/src/lib/queries/events.ts` — typed `ApiError` carries the status; `useExtractEvent` surfaces a `429` as a "sign up" CTA.
 
 ---
+
+## ADR-018 — Vision extraction: inline base64 to a pinned vision model, no image persistence
+
+**Decision:** Image extraction (photo of a leaflet / WhatsApp screenshot → `ParentEvent`) sends the image **inline** in `POST /api/extract` as a base64 data URL, downscaled client-side (canvas, ≤1568px long edge, JPEG q0.8, ~200–500 KB). The backend builds a multimodal message under the **same `instructor` + `ParentEventDraft` contract** as text, pinned to `openai/gpt-4o` (`vision_model` in `_PROVIDER_CONFIG`) with prompt `v3v` (v3 + a composed vision addendum). Images are never persisted: no S3, redacted from DEBUG logs, never sent to PostHog. Vision requests bypass the extraction-model A/B (ADR follows move 1) and return `experiment: null`; client funnel events carry `input_type` instead. Feature overview in `apps/api/VISION_EXTRACTION.md`.
+
+**Reasons:**
+- **Vision-native structured output, not OCR-then-parse.** Leaflet semantics live in layout (dates in headers, prices in small print, decorative fonts); flattening to text first compounds two error modes and loses exactly what matters. One vision call reuses the entire schema/validation/eval machinery unchanged.
+- **No storage means no retention problem.** These are photos of children's school communications. The original plan (reuse the provider-cover presign flow) would have created an S3 corpus of them, dragging in lifecycle rules and the data-protection checklist. Client downscale + inline base64 keeps the request ≲500 KB (Lambda's limit is 6 MB), deletes the retention question entirely, and the canvas re-encode converts HEIC to JPEG as a side effect.
+- **Pinned provider/model, experiment bypassed.** The A/B arms (Scout, gpt-4o-mini-as-text) are text configurations; letting assignment override the vision model would break image requests on the control arm. Pinning also disables low-confidence escalation, matching arm behaviour. `experiment: null` (rather than a sentinel variant) keeps the PostHog flag's variant space clean for the move-1 analysis; `input_type` on `extraction_shown`/`extraction_accepted` is the filter dimension.
+- **`v3v` is composed, not forked.** `SYSTEM_PROMPT = v3 + addendum` keeps one source of truth for field rules while logging an honest version label. The 7-day date table still matters: leaflets print "Friday 19th June" with no year, screenshots say "this Friday".
+- **`detail: "high"` is pinned, with eyes open on cost.** The value in a flyer is the small print; `"low"` is a single 512px thumbnail. Measured: ~2,950 prompt tokens, ~$0.008, 2.2–3.9 s per extraction.
+- **Vision quality is a tested contract from day one.** Three synthetic golden images (committed generator script, no real children's data) cover: clean flyer with a time range, chat screenshot exercising the date table through vision, and a degraded angled photo requiring year inference. 3/3 pass rule checks on gpt-4o; the eval runner gates image cases to `VISION_CAPABLE` combos.
+
+**Out of scope (for now):** Groq Llama-4 Scout as the vision model (natively multimodal and ~⅓ the cost, but content-part messages are untested under Groq's JSON mode — the planned vision eval should settle it), real-photo golden cases (synthetic renders are an easier test; swap in before quoting quality numbers), attaching the source image to the created event (would reintroduce storage — do it only when it's a feature with a reason), and a vision arm in the online experiment.
+
+**Impact:**
+- `apps/api/app/prompts/extraction/v3_vision.py` — `v3v` prompt variant.
+- `apps/api/app/services/extraction.py` — multimodal message path, `VISION_PROVIDER`/`get_vision_model`, `_redact_messages`, `input_type`/`image_bytes` telemetry.
+- `apps/api/app/schemas/events.py` — optional `raw_text` + validated `image_data_url` (jpeg/png/webp data URL, ~2 MB cap; caption exempt from the 10-char floor).
+- `apps/api/app/routers/extract.py` — vision pin + A/B bypass; quota metering unchanged.
+- `apps/web/src/lib/image-downscale.ts`, `apps/web/src/app/(app)/events/new/page.tsx` — EXIF-aware canvas downscale; camera/file attach UI; `input_type` on funnel captures.
+- `apps/api/tests/golden/img_0{7,8,9}*`, `apps/api/scripts/generate_golden_images.py`, `apps/api/evals/extraction/run.py` — image golden cases, generator, runner support.
+- `apps/api/tests/test_extract_schema.py`, `test_extraction_vision.py`, `test_extract_router_vision.py` — 29 tests.
+
+---
+
+## ADR-019 — Extraction A/B arms become provider stacks; vision rides the flag
+
+**Decision:** The `extraction-model` experiment (move 1) is redefined: each arm is now a full **provider stack** serving both the text and the vision path, instead of a text-model pair with vision pinned outside the experiment. **control = the OpenAI stack** (gpt-4o-mini text, gpt-4o vision — the proven configurations), **treatment = the Groq stack** (Llama-4 Scout, natively multimodal, for both paths). `assign_extraction_variant(user_id, vision=...)` picks the arm's `text_model` or `vision_model`; image requests no longer bypass assignment, and `response.experiment` is populated for both input types. With the experiment disabled (no PostHog key) text remains the no-override pre-experiment path and vision falls back to the pinned `VISION_PROVIDER`/`get_vision_model()` default (openai/gpt-4o), so prod-without-PostHog is byte-for-byte unchanged. Supersedes the vision A/B-bypass in ADR-018.
+
+**Reasons:**
+- **The blocker behind the bypass is gone.** ADR-018 bypassed the experiment because content-part messages were untested under Groq JSON mode. The 2026-06-12 eval settled it: Scout passed all 19 rule checks on the image golden set through JSON mode, at ~$0.0005 and ~1s per extraction vs gpt-4o's ~$0.008 and ~3s.
+- **The funnel becomes the real-photo vision eval.** Synthetic goldens prove plumbing, not the quality envelope. `extraction_shown`/`extraction_accepted` already carry `input_type`, so once real traffic exists the per-field edit-rate metric reads Scout-vision quality on real photos — risk contained to the treatment arm.
+- **One provider for the whole surface is the actual business question.** If the Groq stack holds, extraction runs at ~1/15th the vision cost and ~1/16th the text cost with one vendor; the experiment now measures exactly that.
+- **Arm relabel is safe pre-launch.** The old arms (control: groq Scout text, treatment: gpt-4o-mini text) had no real traffic; variant keys in PostHog are unchanged and exposure events carry provider/model, so historical rows stay interpretable. The provider-key guard now also falls through to full passthrough when *both* keys are missing, instead of 500ing.
+
+**Impact:**
+- `apps/api/app/core/experiments.py` — `_VARIANT_TO_CONFIG` becomes a stack table (`provider`, `text_model`, `vision_model`); `assign_extraction_variant` gains `vision=` and a two-step key guard.
+- `apps/api/app/routers/extract.py` — vision joins assignment; pinned default only as disabled-experiment fallback; exposure + `experiment` info on every response.
+- `apps/api/app/services/extraction.py` — `VISION_PROVIDER` comment reframed as fallback.
+- `apps/api/scripts/provision_posthog_dashboard.py` — dashboard description.
+- `apps/api/tests/test_experiments.py`, `test_extract_router_vision.py` — re-pinned to the new contract.
+
+---

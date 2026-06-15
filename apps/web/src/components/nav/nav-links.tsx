@@ -7,12 +7,12 @@ import { useRole } from "@/lib/hooks/use-role";
 type NavItem = { href: string; label: string };
 
 const PARENT_ITEMS: NavItem[] = [
-  { href: "/events", label: "Events" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/discover", label: "Discover" },
 ];
 
 const PROVIDER_ITEMS: NavItem[] = [
-  { href: "/events", label: "Events" },
+  { href: "/calendar", label: "Calendar" },
   { href: "/provider", label: "My provider page" },
 ];
 

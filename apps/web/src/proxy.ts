@@ -30,6 +30,7 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
   const isAuthRoute =
     pathname.startsWith("/sign-up") ||
     pathname.startsWith("/forgot-password");
@@ -48,7 +49,7 @@ export async function proxy(request: NextRequest) {
 
   if (user && isAuthRoute) {
     const url = request.nextUrl.clone();
-    url.pathname = "/events";
+    url.pathname = "/calendar";
     return NextResponse.redirect(url);
   }
 

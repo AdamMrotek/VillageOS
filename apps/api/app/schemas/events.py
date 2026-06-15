@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Self
@@ -98,8 +99,37 @@ class StoredEvent(ParentEvent):
     action_items: list[StoredActionItem] = []  # type: ignore[assignment]
 
 
+# The whole payload must look like base64 — a cheap whole-string scan even at
+# the size cap. jpeg/png/webp matches what the web client's canvas re-encode
+# can produce (it always emits jpeg; png/webp allowed for API callers).
+_IMAGE_DATA_URL_RE = re.compile(r"^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$")
+
+# ~2 MB decoded. The web client downscales to ~200–500 KB; the headroom is for
+# API callers. Anything bigger risks the 6 MB Lambda payload limit.
+MAX_IMAGE_DATA_URL_CHARS = 2_800_000
+
+
 class ExtractRequest(BaseModel):
-    raw_text: str = Field(..., min_length=10, max_length=8000)
+    raw_text: str | None = Field(None, max_length=8000)
+    image_data_url: str | None = Field(None, max_length=MAX_IMAGE_DATA_URL_CHARS)
+
+    @field_validator("image_data_url")
+    @classmethod
+    def image_is_supported_data_url(cls, v: str | None) -> str | None:
+        if v is not None and not _IMAGE_DATA_URL_RE.match(v):
+            raise ValueError(
+                "image_data_url must be a base64 data URL "
+                "of type image/jpeg, image/png, or image/webp"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def require_text_or_image(self) -> Self:
+        # With an image attached, raw_text is an optional caption of any length;
+        # text-only requests keep the original 10-char floor.
+        if self.image_data_url is None and len((self.raw_text or "").strip()) < 10:
+            raise ValueError("Provide raw_text (at least 10 characters) or an image")
+        return self
 
 
 class ExperimentInfo(BaseModel):

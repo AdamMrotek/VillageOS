@@ -1,24 +1,32 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { usePostHog } from "posthog-js/react";
-import { toast } from "sonner";
-import { diffExtractionFields } from "@/lib/extraction-diff";
-import { useCreateEvent, useExtractEvent } from "@/lib/queries/events";
+import { useState } from "react";
 import {
   EVENT_FIELD_LIMITS,
   EVENT_TYPES,
   type ActionItemInput,
   type EventType,
-  type ExperimentInfo,
   type ParentEvent,
 } from "@/lib/types/events";
-import PageLayout from "@/components/page-layout";
 
-// Inlined NEXT_PUBLIC_* at build time. Gates the funnel captures so a build
-// without a PostHog key stays silent instead of warning on every extract.
-const PH_ENABLED = !!process.env.NEXT_PUBLIC_POSTHOG_KEY;
+// "active" is the editable form, "loading" a submit in flight (everything
+// disabled, button reads "Creating…"), "disabled" fully inert.
+export type EventFormVariant = "active" | "loading" | "disabled";
+
+type EventFormProps = {
+  variant: EventFormVariant;
+  // The extracted draft to pre-fill from, or null for manual entry. Field
+  // state initializes from this once — remount with a fresh `key` to load a
+  // new draft.
+  initial: ParentEvent | null;
+  // Which fields the model populated → drives the sage dots.
+  extracted: Partial<Record<keyof ParentEvent, boolean>>;
+  // True when showing an extracted draft (vs manual entry) — gates the dot
+  // legend and the missing-end-time flag.
+  fromExtraction: boolean;
+  onSubmit: (event: ParentEvent) => void;
+  onDiscard: () => void;
+};
 
 function toIsoOrNull(value: string): string | null {
   if (!value) return null;
@@ -35,67 +43,61 @@ function isoToLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function NewEventPage() {
-  const router = useRouter();
-  const posthog = usePostHog();
+// Sage dot marking a field the model read from the source. No score — just
+// "this came from what you pasted, glance at it."
+function ExtractedDot() {
+  return (
+    <span
+      title="Read from your source"
+      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+    />
+  );
+}
 
-  const extractMutation = useExtractEvent();
-  const createMutation = useCreateEvent();
+function FieldLabel({
+  children,
+  extracted,
+  htmlFor,
+}: {
+  children: React.ReactNode;
+  extracted?: boolean;
+  htmlFor?: string;
+}) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <label htmlFor={htmlFor} className="text-eyebrow">
+        {children}
+      </label>
+      {extracted && <ExtractedDot />}
+    </span>
+  );
+}
 
-  // The draft + assigned arm from the last extraction, kept in refs so the
-  // create handler can diff what the user submitted against what the model
-  // produced (the per-field edit-rate metric) without re-rendering on change.
-  const draftRef = useRef<ParentEvent | null>(null);
-  const experimentRef = useRef<ExperimentInfo | null>(null);
+const inputClass =
+  "flex h-9 w-full rounded-md border border-hairline bg-surface px-3 py-1 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
-  const [rawText, setRawText] = useState("");
-
-  const [title, setTitle] = useState("");
-  const [eventType, setEventType] = useState<EventType>("other");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
-  const [isAllDay, setIsAllDay] = useState(false);
-  const [location, setLocation] = useState("");
-  const [description, setDescription] = useState("");
-  const [actionItems, setActionItems] = useState<ActionItemInput[]>([]);
-
-  function handleExtract() {
-    if (rawText.trim().length < 10) {
-      toast.error("Paste at least 10 characters of text");
-      return;
-    }
-    // Errors (incl. a 429 quota hit → sign-up CTA) are handled in
-    // useExtractEvent's onError, so we only wire success here.
-    extractMutation.mutate(rawText, {
-      onSuccess: (res) => {
-        const e = res.event;
-        setTitle(e.title);
-        setEventType(e.event_type);
-        setStartTime(isoToLocalInput(e.start_time));
-        setEndTime(isoToLocalInput(e.end_time));
-        setIsAllDay(e.is_all_day);
-        setLocation(e.location ?? "");
-        setDescription(e.description ?? "");
-        setActionItems(e.action_items);
-
-        // Exposure: the draft is now on screen. Stash it (pre-edit) + the arm
-        // so the create handler can compute the edit diff against it.
-        draftRef.current = e;
-        experimentRef.current = res.experiment;
-        if (PH_ENABLED) {
-          posthog.capture("extraction_shown", {
-            variant: res.experiment?.variant,
-            provider: res.experiment?.provider,
-            model: res.experiment?.model,
-          });
-        }
-      },
-    });
-  }
+export default function EventForm({
+  variant,
+  initial,
+  extracted,
+  fromExtraction,
+  onSubmit,
+  onDiscard,
+}: EventFormProps) {
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [eventType, setEventType] = useState<EventType>(initial?.event_type ?? "other");
+  const [startTime, setStartTime] = useState(() => isoToLocalInput(initial?.start_time ?? null));
+  const [endTime, setEndTime] = useState(() => isoToLocalInput(initial?.end_time ?? null));
+  const [isAllDay, setIsAllDay] = useState(initial?.is_all_day ?? false);
+  const [location, setLocation] = useState(initial?.location ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [actionItems, setActionItems] = useState<ActionItemInput[]>(
+    initial?.action_items ?? [],
+  );
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const submitted: ParentEvent = {
+    onSubmit({
       title,
       event_type: eventType,
       start_time: toIsoOrNull(startTime) as string,
@@ -105,72 +107,31 @@ export default function NewEventPage() {
       description: description || null,
       action_items: actionItems,
       confidence: 1.0,
-    };
-    createMutation.mutate(submitted, {
-      onSuccess: () => {
-        // Conversion + primary metric: only when this event came from an
-        // extraction (manual entries have no draft to diff against).
-        const draft = draftRef.current;
-        if (PH_ENABLED && draft) {
-          const editedFields = diffExtractionFields(draft, submitted);
-          posthog.capture("extraction_accepted", {
-            variant: experimentRef.current?.variant,
-            provider: experimentRef.current?.provider,
-            model: experimentRef.current?.model,
-            n_edited: editedFields.length,
-            edited_fields: editedFields,
-          });
-        }
-        router.push("/events");
-        router.refresh();
-      },
     });
   }
 
-  const inputClass =
-    "flex h-9 w-full rounded-md border border-hairline bg-surface px-3 py-1 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
-
   return (
-    <PageLayout title="New event" backHref="/events" backLabel="Back to events">
-      <div className="grid gap-10 md:grid-cols-2">
-        <section className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-eyebrow-accent">AI extraction</p>
-            <h2 className="text-heading text-ink">Paste text</h2>
-            <p className="text-meta">
-              WhatsApp thread, school newsletter, email — anything with an event.
-            </p>
-          </div>
+    <form
+      onSubmit={handleSubmit}
+      className=""
+    >
+      {fromExtraction && (
+        <div className="mb-6 border-b border-hairline pb-4">
+          <span className="inline-flex items-center gap-1.5 text-meta">
+            Fields marked <ExtractedDot /> were read from your source
+          </span>
+        </div>
+      )}
 
-          <textarea
-            value={rawText}
-            onChange={(e) => setRawText(e.target.value)}
-            rows={14}
-            maxLength={8000}
-            placeholder="Reminder from school: Bake Sale this Friday 24th May at 3pm in the school hall. Please bring £2 in a labelled envelope."
-            className="w-full rounded-md border border-hairline bg-surface px-3 py-2 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          />
-
-          <div className="flex items-center justify-between">
-            <span className="text-meta">{rawText.length} / 8000</span>
-            <button
-              type="button"
-              onClick={handleExtract}
-              disabled={extractMutation.isPending || rawText.trim().length < 10}
-              className="inline-flex h-9 items-center justify-center rounded-md bg-accent px-4 py-2 text-body font-medium text-accent-foreground shadow hover:bg-accent-dark disabled:pointer-events-none disabled:opacity-50"
-            >
-              {extractMutation.isPending ? "Extracting…" : "Extract event →"}
-            </button>
-          </div>
-
-        </section>
-
-        <form onSubmit={handleSubmit} className="space-y-5">
+      {/* A disabled fieldset turns off every control inside, including the
+          submit and discard buttons — one switch for the inert variants. */}
+      <fieldset disabled={variant !== "active"} className="min-w-0">
+        <div className="space-y-5">
           <div className="space-y-1.5">
             <div className="flex items-baseline justify-between">
-              <label htmlFor="title" className="text-eyebrow">
+              <FieldLabel htmlFor="title" extracted={extracted.title}>
                 Title
-              </label>
+              </FieldLabel>
               <span className="text-meta">
                 {title.length} / {EVENT_FIELD_LIMITS.title}
               </span>
@@ -181,33 +142,34 @@ export default function NewEventPage() {
               onChange={(e) => setTitle(e.target.value)}
               required
               maxLength={EVENT_FIELD_LIMITS.title}
-              className={inputClass}
+              placeholder="Summer Bake Sale"
+              className="flex h-11 w-full rounded-md border border-hairline bg-surface px-3.5 text-heading text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
 
           <div className="space-y-1.5">
-            <label htmlFor="event_type" className="text-eyebrow">
+            <FieldLabel htmlFor="event_type" extracted={extracted.event_type}>
               Type
-            </label>
+            </FieldLabel>
             <select
               id="event_type"
               value={eventType}
               onChange={(e) => setEventType(e.target.value as EventType)}
-              className={inputClass}
+              className={`${inputClass} capitalize`}
             >
               {EVENT_TYPES.map((t) => (
-                <option key={t} value={t}>
+                <option key={t} value={t} className="capitalize">
                   {t}
                 </option>
               ))}
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <label htmlFor="start_time" className="text-eyebrow">
+              <FieldLabel htmlFor="start_time" extracted={extracted.start_time}>
                 Starts
-              </label>
+              </FieldLabel>
               <input
                 id="start_time"
                 type="datetime-local"
@@ -219,16 +181,22 @@ export default function NewEventPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="end_time" className="text-eyebrow">
-                Ends (optional)
-              </label>
+              <FieldLabel htmlFor="end_time">Ends · optional</FieldLabel>
               <input
                 id="end_time"
                 type="datetime-local"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className={inputClass}
+                className={`${inputClass} ${
+                  fromExtraction && !endTime ? "border-warm" : ""
+                }`}
               />
+              {fromExtraction && !endTime && (
+                <p className="flex items-center gap-1.5 text-meta text-warm">
+                  <span className="h-1 w-1 rounded-full bg-warm" />
+                  Not in the source — add it if you know it
+                </p>
+              )}
             </div>
           </div>
 
@@ -243,22 +211,23 @@ export default function NewEventPage() {
           </label>
 
           <div className="space-y-1.5">
-            <label htmlFor="location" className="text-eyebrow">
-              Location (optional)
-            </label>
+            <FieldLabel htmlFor="location" extracted={extracted.location}>
+              Location · optional
+            </FieldLabel>
             <input
               id="location"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
+              placeholder="School hall, Oakwood Primary"
               className={inputClass}
             />
           </div>
 
           <div className="space-y-1.5">
             <div className="flex items-baseline justify-between">
-              <label htmlFor="description" className="text-eyebrow">
-                Description (optional)
-              </label>
+              <FieldLabel htmlFor="description" extracted={extracted.description}>
+                Description · optional
+              </FieldLabel>
               <span className="text-meta">
                 {description.length} / {EVENT_FIELD_LIMITS.description}
               </span>
@@ -277,7 +246,9 @@ export default function NewEventPage() {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-eyebrow">Action items</label>
+              <FieldLabel extracted={extracted.action_items}>
+                Action items{actionItems.length ? ` · ${actionItems.length}` : ""}
+              </FieldLabel>
               <button
                 type="button"
                 onClick={() =>
@@ -286,7 +257,7 @@ export default function NewEventPage() {
                     { description: "", cost_estimate_gbp: null, urgent: false },
                   ])
                 }
-                className="text-meta underline-offset-4 hover:text-ink hover:underline"
+                className="text-meta font-medium text-accent-dark underline-offset-4 hover:underline"
               >
                 + Add item
               </button>
@@ -368,16 +339,24 @@ export default function NewEventPage() {
               </ul>
             )}
           </div>
+        </div>
 
+        <button
+          type="submit"
+          className="mt-7 inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-4 text-body font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+        >
+          {variant === "loading" ? "Creating…" : "Create event"}
+        </button>
+        <div className="mt-3.5 text-center">
           <button
-            type="submit"
-            disabled={createMutation.isPending}
-            className="inline-flex h-10 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-body font-medium text-primary-foreground shadow hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
+            type="button"
+            onClick={onDiscard}
+            className="text-meta underline-offset-4 hover:text-ink hover:underline disabled:pointer-events-none disabled:opacity-50"
           >
-            {createMutation.isPending ? "Creating…" : "Create event"}
+            {fromExtraction ? "Discard draft" : "Start over"}
           </button>
-        </form>
-      </div>
-    </PageLayout>
+        </div>
+      </fieldset>
+    </form>
   );
 }

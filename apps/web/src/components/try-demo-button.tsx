@@ -31,7 +31,7 @@ export default function TryDemoButton() {
       // they'll just see an empty calendar they can populate themselves.
     }
 
-    router.push("/events");
+    router.push("/calendar");
     router.refresh();
   }
 

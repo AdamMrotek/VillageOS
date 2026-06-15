@@ -1,0 +1,8 @@
+{
+  "event_type": ["sport", "school"],
+  "start_time": "2026-06-19T09:30:00",
+  "is_all_day": false,
+  "action_items_keywords": [["PE kit", "pe kit"], "water bottle"],
+  "transcript": "OAKWOOD JUNIOR SCHOOL — SPORTS DAY. Friday 19th June, 9:30am start, on the playing field. Children to wear PE kit and bring a water bottle. Parents welcome from 9:15am.",
+  "notes": "Synthetic angled phone photo with blur and noise (scripts/generate_golden_images.py). Date printed without a year: 19 June 2026 is the next Friday 19th June after FROZEN_TODAY, so year inference (v3 rule 1) must produce 2026-06-19. The 9:15am 'parents welcome' is a distractor for the 9:30 start."
+}

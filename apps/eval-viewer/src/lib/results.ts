@@ -50,6 +50,19 @@ function prettyTimestamp(runId: string): string {
   return `${m[1]} ${m[2]}:${m[3]} UTC`;
 }
 
+export type EvalKind = "all" | "text" | "vision";
+
+export function rowKind(row: EvalRow): Exclude<EvalKind, "all"> {
+  return row.input_type === "image" ? "vision" : "text";
+}
+
+export function filterRunsByKind(runs: RunGroup[], kind: EvalKind): RunGroup[] {
+  if (kind === "all") return runs;
+  return runs
+    .map((run) => ({ ...run, rows: run.rows.filter((r) => rowKind(r) === kind) }))
+    .filter((run) => run.rows.length > 0);
+}
+
 export function formatCost(value: number | null | undefined): string {
   if (value === null || value === undefined) return "n/a";
   return `$${(value * 1000).toFixed(4)}/1k`;

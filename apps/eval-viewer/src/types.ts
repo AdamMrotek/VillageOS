@@ -32,6 +32,12 @@ export interface EvalRow {
   rule_total: number;
   rule_all_passed: boolean;
   latency_s: number | null;
+  llm_duration_ms?: number | null;
+  input_length_chars?: number | null;
+  // "image" for vision rows; "text" for text rows. Rows written before the
+  // vision pipeline shipped lack the field entirely.
+  input_type?: "text" | "image" | null;
+  image_bytes?: number | null;
   tokens_used: number | null;
   prompt_tokens: number | null;
   completion_tokens: number | null;

@@ -24,7 +24,7 @@ export default function SignInForm() {
       setError(error.message);
       setLoading(false);
     } else {
-      router.push("/events");
+      router.push("/calendar");
       router.refresh();
     }
   }

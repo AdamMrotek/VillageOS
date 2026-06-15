@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import itertools
 import json
 import os
@@ -36,6 +37,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app.prompts.extraction import VERSIONS as PROMPT_VERSIONS
+from app.prompts.extraction import VISION_VERSION
 from app.services.extraction import ExtractionRunDetails, extract_event
 from evals.extraction.grader import (
     GRADER_MODEL,
@@ -79,6 +81,18 @@ DEFAULT_MATRIX: list[tuple[str, str]] = [
     ("groq", "llama-3.1-8b-instant"),
 ]
 
+# Combos allowed to receive image cases; everything else skips them (a text
+# model erroring on an image row is noise, not signal).
+VISION_CAPABLE: set[tuple[str, str]] = {
+    ("openai", "gpt-4o"),
+    ("openai", "gpt-4o-mini"),
+    # Llama-4 Scout is natively multimodal; Groq accepts OpenAI-style
+    # image_url content parts under JSON mode (their docs, 2026-06).
+    ("groq", "meta-llama/llama-4-scout-17b-16e-instruct"),
+}
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -86,8 +100,17 @@ DEFAULT_MATRIX: list[tuple[str, str]] = [
 @dataclass
 class GoldenCase:
     case_id: str
-    raw_text: str
+    raw_text: str | None
     expected: dict
+    image_path: Path | None = None
+
+    @property
+    def grader_text(self) -> str:
+        """What the text-only LLM judge reads as 'the input'. Image cases carry
+        a faithful transcript in expected["transcript"] for this purpose."""
+        return (
+            self.raw_text or self.expected.get("transcript") or f"[image-only case {self.case_id}]"
+        )
 
 
 @dataclass
@@ -129,16 +152,31 @@ class CaseResult:
 
 def load_cases() -> list[GoldenCase]:
     cases: list[GoldenCase] = []
-    for txt_path in sorted(GOLDEN_DIR.glob("*.txt")):
-        json_path = txt_path.with_suffix(".json")
-        cases.append(
-            GoldenCase(
-                case_id=txt_path.stem,
-                raw_text=txt_path.read_text(),
-                expected=json.loads(json_path.read_text()),
+    for path in sorted(GOLDEN_DIR.iterdir()):
+        if path.suffix == ".txt":
+            cases.append(
+                GoldenCase(
+                    case_id=path.stem,
+                    raw_text=path.read_text(),
+                    expected=json.loads(path.with_suffix(".json").read_text()),
+                )
             )
-        )
+        elif path.suffix.lower() in IMAGE_EXTS:
+            cases.append(
+                GoldenCase(
+                    case_id=path.stem,
+                    raw_text=None,
+                    expected=json.loads(path.with_suffix(".json").read_text()),
+                    image_path=path,
+                )
+            )
     return cases
+
+
+def image_to_data_url(path: Path) -> str:
+    subtype = "jpeg" if path.suffix.lower() in {".jpg", ".jpeg"} else path.suffix.lower()[1:]
+    encoded = base64.b64encode(path.read_bytes()).decode()
+    return f"data:image/{subtype};base64,{encoded}"
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +241,7 @@ def evaluate_case(case: GoldenCase, event: Any) -> list[FieldCheck]:
             "title_nonempty",
             "non-empty, not raw input",
             title or "<empty>",
-            bool(title) and title != case.raw_text.strip(),
+            bool(title) and title != (case.raw_text or "").strip(),
         )
     )
 
@@ -255,10 +293,16 @@ async def run_case(
     mode: str | None,
 ) -> CaseResult:
     started = time.perf_counter()
+    # Image cases run the vision variant of the requested prompt, mirroring how
+    # production defaults image requests to VISION_VERSION. An explicitly
+    # non-default --prompt-versions sweep is honored as given.
+    if case.image_path is not None and prompt_version == "v3":
+        prompt_version = VISION_VERSION
     try:
         response, details = await extract_event(
             case.raw_text,
             today=FROZEN_TODAY,
+            image_data_url=image_to_data_url(case.image_path) if case.image_path else None,
             provider=provider,
             model=model,
             prompt_version=prompt_version,
@@ -317,7 +361,7 @@ async def grade_results(
     for r in results:
         try:
             verdict, details = await grade_case(
-                raw_text=cases_by_id[r.case_id].raw_text,
+                raw_text=cases_by_id[r.case_id].grader_text,
                 expected=cases_by_id[r.case_id].expected,
                 actual_event=r.event_dump,
                 extraction_error=r.error,
@@ -395,6 +439,8 @@ def result_to_row(r: CaseResult, run_id: str, expected: dict) -> dict:
         # end-to-end wall-clock for reference.
         "llm_duration_ms": d.llm_duration_ms if d else None,
         "input_length_chars": d.input_length_chars if d else None,
+        "input_type": d.input_type if d else None,
+        "image_bytes": d.image_bytes if d else None,
         "tokens_used": d.tokens_used if d else None,
         "prompt_tokens": d.prompt_tokens if d else None,
         "completion_tokens": d.completion_tokens if d else None,
@@ -424,7 +470,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--cases",
         default=None,
-        help="Comma-separated case_ids (matches *.txt stem). Default: all golden cases.",
+        help="Comma-separated case_ids (matches the *.txt or image file stem). Default: all golden cases.",
     )
     parser.add_argument(
         "--mode",
@@ -506,7 +552,15 @@ async def run_matrix(
     results: list[CaseResult] = []
     for version, (provider, model) in itertools.product(prompt_versions, runnable):
         print(f"  -> {provider}/{model} (prompt {version})")
-        tasks = [run_case(c, provider, model, version, mode) for c in cases]
+        combo_cases = cases
+        if (provider, model) not in VISION_CAPABLE:
+            combo_cases = [c for c in cases if c.image_path is None]
+            for c in cases:
+                if c.image_path is not None:
+                    print(
+                        f"     [skip] {c.case_id} — image case, {provider}/{model} is not vision-capable"
+                    )
+        tasks = [run_case(c, provider, model, version, mode) for c in combo_cases]
         for r in await asyncio.gather(*tasks):
             suffix = f" — {r.error}" if r.error else ""
             print(f"     {r.status_mark} {r.case_id}: {r.tokens} tok, {r.duration_s:.2f}s{suffix}")
@@ -529,7 +583,11 @@ async def main() -> int:
     if not runnable:
         raise SystemExit("No runnable provider/model combos — set at least one API key.")
 
-    total_calls = len(cases) * len(runnable) * len(prompt_versions)
+    # Image cases only run on vision-capable combos, so count per combo.
+    n_text = sum(1 for c in cases if c.image_path is None)
+    total_calls = len(prompt_versions) * sum(
+        len(cases) if combo in VISION_CAPABLE else n_text for combo in runnable
+    )
     print(
         f"Running {len(cases)} case(s) × {len(runnable)} model(s) × "
         f"{len(prompt_versions)} prompt version(s) = {total_calls} call(s)..."

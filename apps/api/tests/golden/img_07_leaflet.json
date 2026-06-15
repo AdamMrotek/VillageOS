@@ -1,0 +1,9 @@
+{
+  "event_type": ["fundraiser", "school"],
+  "start_time": "2026-05-16T11:00:00",
+  "end_time": "2026-05-16T14:00:00",
+  "is_all_day": false,
+  "action_items_keywords": ["£2", "cake"],
+  "transcript": "ST MARY'S PRIMARY SCHOOL — SUMMER FAIR. Saturday 16 May 2026, 11:00am – 2:00pm, on the school field. Entry £2 per adult — children free. Stalls, raffle, face painting, BBQ. Raising money for the PTA. Please bring cake donations to the office.",
+  "notes": "Synthetic flyer (scripts/generate_golden_images.py). Clean baseline vision case: full date with year and an explicit time range. A summer fair is both a fundraiser and a school event. 'transcript' is the faithful text of the image, used only by the text-only LLM judge."
+}

@@ -1,0 +1,8 @@
+{
+  "event_type": "sport",
+  "start_time": "2026-05-15T15:00:00",
+  "is_all_day": false,
+  "action_items_keywords": ["swimsuit", "towel"],
+  "transcript": "WhatsApp group 'Year 4 Parents'. Jess: Don't forget the swimming gala this Friday at 3pm at the leisure centre! Reply: thanks! do they need anything? Jess: Just swimsuit and towel. Spectators welcome.",
+  "notes": "Synthetic chat screenshot (scripts/generate_golden_images.py). Exercises the date table through vision: 'this Friday' with FROZEN_TODAY = Sunday 2026-05-10 resolves to 2026-05-15. Asks are split across messages."
+}

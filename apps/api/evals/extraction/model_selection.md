@@ -36,6 +36,38 @@ Each row uses the mode it's most reliable in.
 spike to 20–45s on the queue. The numbers above show the *fast-path* latency
 when not throttled; true sustained latency can't be measured reliably right now.
 
+## Vision-capable models — pricing survey (2026-06-12)
+
+Candidates for the image-extraction path (see `apps/api/VISION_EXTRACTION.md`,
+ADR-018). Prices pulled from provider pages on 2026-06-12. Per-extraction
+estimates scale from the measured gpt-4o profile (~2,950 prompt + ~150
+completion tokens); image tokenization differs per provider, so treat them as
+±2× until measured in the eval.
+
+| Provider/Model                          | Input /1M | Output /1M | Est. / extraction | Notes |
+|-----------------------------------------|-----------|------------|-------------------|-------|
+| **groq/llama-4-scout-17b-16e-instruct** | $0.11     | $0.34      | ~$0.0004          | Only vision model on Groq (preview). Docs state JSON mode + tool use work with images — answers the ADR-018 open question on paper. Already the prod text model: single-provider prod if it passes the eval. Limits: 4 MB base64, 5 images/request. |
+| openai/gpt-4o (current vision pin)      | $2.50     | $10.00     | ~$0.008 (measured)| Legacy/grandfathered — gpt-4.1 replaced it; expect a deprecation window. |
+| openai/gpt-4o-mini                      | $0.15     | $0.60      | ~$0.0006 ⚠        | ⚠ Mini tokenizes images at a much higher multiplier; image-heavy calls cost near gpt-4o levels. Verify before counting on the price. |
+| openai/gpt-4.1-mini                     | $0.40     | $1.60      | ~$0.0015          | Recommended replacement tier for 4o-mini. |
+| openai/gpt-5.4 / -mini / -nano          | $2.50 / $0.75 / $0.20 | $15 / $4.50 / $1.25 | ~$0.010 / $0.003 / $0.0008 | Current flagship family, all multimodal. |
+| google/gemini-2.5-flash                 | $0.30     | $2.50      | ~$0.0014          | Strong vision reputation at this tier; would add a third provider to `_PROVIDER_CONFIG`. |
+| google/gemini-2.5-flash-lite            | $0.10     | $0.40      | ~$0.0004          | Cheapest credible option alongside Scout. |
+| google/gemini-3-flash (preview)         | $0.50     | $3.00      | ~$0.002           | Newer generation, preview pricing. |
+| google/gemini-2.5-pro                   | $1.25     | $10.00     | ~$0.006           | Overkill for leaflet extraction. |
+
+**Takeaway:** the interesting bracket is Scout, Gemini Flash-Lite (~$0.0004),
+and Gemini 2.5 Flash (~$0.0014) — 5–20× cheaper than the pinned gpt-4o. Scout
+additionally collapses prod to one provider. Next step: add Scout (and
+optionally a Gemini model) to `VISION_CAPABLE` in `evals/extraction/run.py`
+and sweep the three image golden cases against the gpt-4o baseline.
+
+Sources: [Groq pricing](https://groq.com/pricing/) ·
+[Groq vision docs](https://console.groq.com/docs/vision) ·
+[OpenAI pricing](https://developers.openai.com/api/docs/pricing) ·
+[GPT-4o legacy pricing](https://pecollective.com/tools/gpt-4o-pricing/) ·
+[Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing)
+
 ## Why date extraction is the discriminator
 
 All four golden cases test broadly the same fields, but only `_adhoc_football`
