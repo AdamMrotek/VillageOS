@@ -109,7 +109,9 @@ def _events_node(
     return node
 
 
-def _trends(series: list[dict], *, display: str, breakdown_filter: dict, formula: str | None = None) -> dict:
+def _trends(
+    series: list[dict], *, display: str, breakdown_filter: dict, formula: str | None = None
+) -> dict:
     trends_filter: dict = {"display": display}
     if formula:
         trends_filter["formula"] = formula
@@ -169,7 +171,14 @@ def _insight_specs() -> list[dict]:
             "description": "Primary metric. Mean of n_edited on extraction_accepted, split by "
             "arm, as a table (control vs treatment numbers side by side). Lower = fewer fixes.",
             "query": _trends(
-                [_events_node("extraction_accepted", "extraction_accepted", math="avg", math_property="n_edited")],
+                [
+                    _events_node(
+                        "extraction_accepted",
+                        "extraction_accepted",
+                        math="avg",
+                        math_property="n_edited",
+                    )
+                ],
                 display="ActionsTable",
                 breakdown_filter=_BY_VARIANT,
             ),
@@ -180,7 +189,14 @@ def _insight_specs() -> list[dict]:
             "text+image). Isolates Scout-vision edit-rate on real photos — the riskiest part "
             "of the treatment arm (ADR-019), invisible in the variant-only average.",
             "query": _trends(
-                [_events_node("extraction_accepted", "extraction_accepted", math="avg", math_property="n_edited")],
+                [
+                    _events_node(
+                        "extraction_accepted",
+                        "extraction_accepted",
+                        math="avg",
+                        math_property="n_edited",
+                    )
+                ],
                 display="ActionsTable",
                 breakdown_filter=_BY_VARIANT_AND_INPUT,
             ),
