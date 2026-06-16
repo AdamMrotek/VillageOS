@@ -1,3 +1,4 @@
+import Link from "next/link";
 import SignInForm from "@/components/sign-in-form";
 import TryDemoButton from "@/components/try-demo-button";
 
@@ -21,6 +22,16 @@ export default function LandingPage() {
         <div className="flex flex-col items-start gap-3">
           <TryDemoButton />
           <p className="text-meta">No signup needed — try it with sample events.</p>
+          <p className="text-meta">
+            We send what you enter to an AI to read it.{" "}
+            <Link
+              href="/privacy"
+              className="underline underline-offset-4 hover:text-ink"
+            >
+              How we handle your data
+            </Link>
+            .
+          </p>
         </div>
       </section>
 

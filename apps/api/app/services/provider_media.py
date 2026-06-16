@@ -39,6 +39,37 @@ def _s3():
     )
 
 
+def delete_cover_objects(user_id: str) -> int:
+    """Delete every cover object this provider has ever uploaded. Returns the
+    count removed.
+
+    Keys are versioned per upload (`cover-<hex>`), so replacements leave older
+    objects behind; deleting the whole `providers/{user_id}/` prefix erases all
+    of them in one sweep. A no-op (returns 0) when the prefix is empty — e.g. a
+    parent account, or a provider who never uploaded — so it's safe to call for
+    any user on account deletion without first checking their role.
+
+    Raises if the bucket isn't configured; the caller treats storage cleanup as
+    best-effort so a misconfiguration never blocks the account deletion itself.
+    """
+    bucket = require(get_settings().provider_cover_bucket, "PROVIDER_COVER_BUCKET")
+    s3 = _s3()
+    prefix = f"providers/{user_id}/"
+
+    objects = [
+        {"Key": obj["Key"]}
+        for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix)
+        for obj in page.get("Contents", [])
+    ]
+    if not objects:
+        return 0
+
+    # delete_objects caps at 1000 keys per request.
+    for start in range(0, len(objects), 1000):
+        s3.delete_objects(Bucket=bucket, Delete={"Objects": objects[start : start + 1000]})
+    return len(objects)
+
+
 def create_cover_upload_ticket(user_id: str, content_type: str) -> dict:
     """A short-lived presigned POST plus the final CloudFront URL.
 

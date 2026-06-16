@@ -14,13 +14,14 @@ domain, or onboarding a new environment.
 
 ## At a glance
 
-| Service | Role | State (2026-05-29) |
+| Service | Role | State (2026-06-16) |
 |---|---|---|
 | **Supabase** | Auth (GoTrue) + Postgres + JWKS | ✅ Live — project `hkablmuzbizmgmmlxegl` |
 | **AWS** (Lambda + API Gateway, SAM) | Backend host | ✅ Live — `eu-north-1`, stack `villageos-api` |
-| **Vercel** | Frontend host | ✅ Live on `village-os-web.vercel.app`; `village.co.uk` ⏳ pending DNS |
-| **GoDaddy** | Registrar + DNS for `village.co.uk` | ⏳ Domain bought today; records added, propagating |
-| **Resend** | Transactional email (via Supabase SMTP) | ⏳ Sending domain `village.co.uk` pending DNS verification |
+| **Vercel** | Frontend host | ✅ Live on `villageos.co.uk` (+ `village-os-web.vercel.app`) |
+| **GoDaddy** | Registrar + DNS for `villageos.co.uk` | ✅ Live — GoDaddy nameservers authoritative; records propagated |
+| **Resend** | Transactional email (via Supabase SMTP) | ✅ Live — `villageos.co.uk` verified, wired as Supabase custom SMTP |
+| **ImprovMX** | Inbound email forwarding — privacy contact | ✅ Live — `privacy@villageos.co.uk` → owner Gmail (MX + SPF verified) |
 | **Groq** | LLM provider (**active**) | ✅ Live — `LLM_PROVIDER=groq` |
 | **OpenAI** | LLM provider (standby) | 🟡 Configured but inactive |
 | **GitHub Actions** | CI + deploy | ✅ Live — `ci.yml`, `deploy-api.yml` |
@@ -47,7 +48,7 @@ Postgres with RLS, and JWKS public keys the API uses to verify JWTs asymmetrical
 `apps/web/src/proxy.ts`, `apps/api/app/core/auth.py`, `apps/api/app/core/db.py`.
 
 **On domain change.** Update **Auth → URL Configuration** in the dashboard:
-Site URL `https://village.co.uk`, add `https://village.co.uk/reset-password` to
+Site URL `https://villageos.co.uk`, add `https://villageos.co.uk/reset-password` to
 redirect URLs (documented in [AUTH.md](AUTH.md#1-url-configuration)). Otherwise
 sign-in and password-reset emails point at the wrong host.
 
@@ -82,8 +83,8 @@ domain). The only domain-sensitive setting is CORS — see below.
 **What it does.** Hosts the Next.js app (`apps/web`). Auto-deploys from `main`;
 preview deploys per PR.
 
-- **Current URL:** `https://village-os-web.vercel.app`
-- **Custom domain:** `village.co.uk` — added in the Vercel dashboard, **pending DNS**
+- **Current URL:** `https://villageos.co.uk` (also `https://village-os-web.vercel.app`)
+- **Custom domain:** `villageos.co.uk` — **live** via GoDaddy DNS
   (apex `A → 216.198.79.1`; `www → cname.vercel-dns.com`).
 
 **Where it's configured.**
@@ -91,7 +92,7 @@ preview deploys per PR.
 | Location | Purpose |
 |---|---|
 | **Vercel dashboard → Settings → Environment Variables** | Prod values for all `NEXT_PUBLIC_*` + `RESEND_API_KEY` |
-| **Vercel dashboard → Settings → Domains** | `village.co.uk` attachment + DNS instructions |
+| **Vercel dashboard → Settings → Domains** | `villageos.co.uk` attachment + DNS instructions |
 | `apps/web/next.config.ts` | Build config (no `vercel.json` in repo) |
 | `apps/web/src/lib/api-fetch.ts` | Reads `NEXT_PUBLIC_API_URL` to call the backend |
 
@@ -101,13 +102,11 @@ the frontend if the domain was attached after the last build.
 
 ---
 
-## GoDaddy — registrar & DNS for `village.co.uk`
+## GoDaddy — registrar & DNS for `villageos.co.uk`
 
-**What it does.** Domain registrar and authoritative DNS host. Bought 2026-05-29.
-
-> The previous owner's nameservers (`phase8.net` / hosts.co.uk) may still appear in
-> DNS lookups until GoDaddy's nameservers fully propagate. This is expected for a
-> day-old domain and clears on its own.
+**What it does.** Domain registrar and authoritative DNS host. Bought 2026-05-29;
+GoDaddy nameservers (`ns41/ns42.domaincontrol.com`) are authoritative and fully
+propagated.
 
 **Records to maintain (all in the GoDaddy DNS panel):**
 
@@ -137,11 +136,47 @@ wired in as Supabase's custom SMTP server.
 
 | Location | Purpose |
 |---|---|
-| **Resend dashboard → Domains** | Verify `village.co.uk` (SPF/DKIM/MX — see GoDaddy table) |
-| **Supabase dashboard → Project Settings → Authentication → SMTP** | `smtp.resend.com:465`, user `resend`, password = Resend API key, sender `noreply@village.co.uk` |
+| **Resend dashboard → Domains** | `villageos.co.uk` verified (SPF/DKIM/MX — see GoDaddy table) |
+| **Supabase dashboard → Project Settings → Authentication → SMTP** | `smtp.resend.com:465`, user `resend`, password = Resend API key, sender `noreply@villageos.co.uk` |
 
-**Current state.** Domain verification pending — Resend shows "Domain not found"
-until the GoDaddy records propagate. Setup steps in [AUTH.md](AUTH.md#custom-smtp).
+**Current state.** ✅ Live — `villageos.co.uk` is verified in Resend and wired as
+Supabase's custom SMTP, so Auth emails (sign-up, password reset, reauth nonce)
+send from `noreply@villageos.co.uk`. Setup steps in [AUTH.md](AUTH.md#custom-smtp).
+
+---
+
+## ImprovMX — inbound email forwarding (privacy contact)
+
+**What it does.** Free inbound forwarding for the data-protection contact named
+in the privacy notice. `privacy@villageos.co.uk` → the owner's personal Gmail, so
+parents' data-protection requests land in an inbox that's actually monitored.
+Replies send *as* the address via Resend SMTP (Gmail "Send mail as"), so the
+whole round-trip stays on `@villageos.co.uk` for £0. The contact address lives in
+code as `PRIVACY_CONTACT_EMAIL` in `apps/web/src/lib/privacy.ts` (rendered on the
+`/privacy` page); ImprovMX itself is not called from application code.
+
+**Where it's configured.**
+
+| Location | Purpose |
+|---|---|
+| **ImprovMX dashboard → Aliases** | `privacy@villageos.co.uk` → owner Gmail |
+| **DNS host** (see caveat) | MX + SPF records below |
+| **Gmail → Settings → Send mail as** | Reply as `privacy@villageos.co.uk` via `smtp.resend.com:587`, user `resend`, password = Resend API key |
+
+**DNS records (replace the existing apex MX):**
+
+| Host | Type | Value | Priority |
+|---|---|---|---|
+| `@` | MX | `mx1.improvmx.com` | 10 |
+| `@` | MX | `mx2.improvmx.com` | 20 |
+| `@` | TXT | `v=spf1 include:spf.improvmx.com ~all` | — |
+
+> Add these in the **GoDaddy** DNS panel (GoDaddy is authoritative — see above).
+
+**Current state.** ✅ Live — `dig MX villageos.co.uk` returns `mx1/mx2.improvmx.com`
+and the SPF TXT is present, so `privacy@villageos.co.uk` forwards to the owner's
+Gmail. The address is wired in the app as `PRIVACY_CONTACT_EMAIL`
+(`apps/web/src/lib/privacy.ts`) and rendered on `/privacy`.
 
 ---
 
@@ -187,7 +222,7 @@ break when the frontend domain changes.
 
 | Place | Value | Used by |
 |---|---|---|
-| **GitHub variable `ALLOWED_ORIGINS`** | `https://village.co.uk,https://www.village.co.uk,https://village-os-web.vercel.app` | **Production** (CI deploy) |
+| **GitHub variable `ALLOWED_ORIGINS`** | `https://villageos.co.uk,https://www.villageos.co.uk,https://village-os-web.vercel.app` | **Production** (CI deploy) |
 | `apps/api/samconfig.toml` | same list | **Local** `sam deploy` (gitignored) |
 | `apps/api/.env` → `ALLOWED_ORIGINS` | `http://localhost:3000` | Local dev server |
 
