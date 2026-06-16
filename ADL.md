@@ -386,3 +386,23 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 - `apps/api/tests/test_experiments.py`, `test_extract_router_vision.py` — re-pinned to the new contract.
 
 ---
+
+## ADR-020 — PostHog for product analytics + experiment assignment
+
+**Decision:** Integrate PostHog as the single tool for both product analytics and A/B experiment control. The extraction model A/B's arm is chosen **server-side** via the `extraction-model` feature flag (keyed on the authenticated user's `sub`); the web SDK `identify()`s with the same Supabase user id so server and client events stitch into one funnel.
+
+**Reasons:**
+- **One `distinct_id` across both halves.** Server (`extraction_assigned`) and client (`extraction_shown`, `extraction_accepted`) events join without a separate identity-resolution step.
+- **Feature flags double as live experiment control.** The split is adjustable from the dashboard with no deploy; assignment stays deterministic (PostHog hashes `sub + flag key`).
+- **Disabled-by-default.** No `POSTHOG_API_KEY` ⇒ production default for everyone, no captures, no behaviour change. Assignment runs *after* the tier quota gate (ADR-017), never bypassing it.
+- **Vendor-optional.** The assignment is just a deterministic hash; dropping PostHog would lose the analytics join, not the experiment.
+- **Dashboard as code.** The A/B readout dashboard (conversion, mean `n_edited`, most-edited fields — each by variant) is provisioned idempotently by `apps/api/scripts/provision_posthog_dashboard.py` rather than hand-clicked, so it's reproducible and reviewable. It uses a separate personal API key (management) from the app's `phc_…` capture key.
+
+**Impact:**
+- `apps/api/app/core/experiments.py` — server-authoritative flag evaluation + `extraction_assigned` capture.
+- Web SDK initialised in `apps/web` with `identify()` on the Supabase user id.
+- `apps/api/scripts/provision_posthog_dashboard.py` — provisions the A/B insights dashboard via the PostHog API.
+
+**See also:** [apps/api/EXPERIMENTS.md](apps/api/EXPERIMENTS.md) for the methodology and event taxonomy.
+
+---

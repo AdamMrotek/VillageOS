@@ -65,6 +65,11 @@ export default function EventExtraction() {
   // success/error handlers from yanking the user back out of "capture".
   const cancelledRef = useRef(false);
 
+  // Re-extract counter for the current review session: a 2nd+ extract before
+  // the draft is created or discarded signals dissatisfaction with draft 1.
+  // Reset on create/discard so each accepted/abandoned draft starts fresh.
+  const attemptRef = useRef(0);
+
   const [phase, setPhase] = useState<Phase>("capture");
   const [rawText, setRawText] = useState("");
   const [image, setImage] = useState<CaptureImage | null>(null);
@@ -99,6 +104,7 @@ export default function EventExtraction() {
     }
     const inputType: ExtractionInputType = image ? (text ? "text+image" : "image") : "text";
     cancelledRef.current = false;
+    const attempt = (attemptRef.current += 1);
     setPhase("extracting");
     // Errors (incl. a 429 quota hit → sign-up CTA) also surface in
     // useExtractEvent's onError; here we only handle UI phase + success wiring.
@@ -118,6 +124,8 @@ export default function EventExtraction() {
               provider: res.experiment?.provider,
               model: res.experiment?.model,
               input_type: inputType,
+              attempt,
+              re_extract: attempt > 1,
             });
           }
         },
@@ -153,6 +161,17 @@ export default function EventExtraction() {
   }
 
   function handleDiscard() {
+    // Strongest negative signal: the draft was thrown away, not fixed. Capture
+    // the assigned arm before clearing it.
+    if (PH_ENABLED && extraction) {
+      posthog.capture("extraction_discarded", {
+        variant: extraction.experiment?.variant,
+        provider: extraction.experiment?.provider,
+        model: extraction.experiment?.model,
+        input_type: extraction.inputType,
+      });
+    }
+    attemptRef.current = 0;
     setExtraction(null);
     // The form stays on screen in the capture phase — remount it so the
     // discarded draft's values don't linger in the empty disabled form.
@@ -176,6 +195,7 @@ export default function EventExtraction() {
             edited_fields: editedFields,
           });
         }
+        attemptRef.current = 0;
         router.push("/calendar");
         router.refresh();
       },

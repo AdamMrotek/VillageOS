@@ -154,11 +154,11 @@ python -m evals.extraction.run \
 ## Experimentation
 
 Evals prove a model is correct offline; experiments measure whether real users
-*act* on its output. VillageOS runs a feature-flagged **A/B on the extraction
-model** (`groq/llama-4-scout` vs `openai/gpt-4o-mini`) in production — closing the
-loop from offline golden eval to online behaviour. Full methodology in
-[`apps/api/EXPERIMENTS.md`](./apps/api/EXPERIMENTS.md); the live experiment in
-[`extraction_model_ab.md`](./apps/api/evals/experiments/extraction_model_ab.md).
+*act* on its output. VillageOS runs a feature-flagged **provider-stack A/B** on
+extraction (control = the OpenAI stack vs treatment = the Groq `llama-4-scout`
+stack, one arm serving both text and vision) in production — closing the loop from
+offline golden eval to online behaviour. Hypothesis, decision rule, metrics, and
+readout in [`apps/api/EXPERIMENTS.md`](./apps/api/EXPERIMENTS.md).
 
 - **Server-authoritative assignment.** The arm is chosen on the API
   (`app/core/experiments.py`) via a PostHog flag keyed on the user id —
