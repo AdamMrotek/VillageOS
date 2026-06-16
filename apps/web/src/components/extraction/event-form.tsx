@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
+import { Checkbox } from "@repo/ui/components/checkbox";
+import { DatePicker } from "@repo/ui/components/date-picker";
 import {
   EVENT_FIELD_LIMITS,
   EVENT_TYPES,
@@ -28,19 +32,47 @@ type EventFormProps = {
   onDiscard: () => void;
 };
 
-function toIsoOrNull(value: string): string | null {
-  if (!value) return null;
-  const d = new Date(value);
+// Split an ISO timestamp into the `date` (YYYY-MM-DD) and `time` (HH:mm) parts
+// the native <input type="date"> / <input type="time"> controls expect, in the
+// viewer's local zone. Empty parts for a null/invalid input.
+function isoToParts(iso: string | null): { date: string; time: string } {
+  if (!iso) return { date: "", time: "" };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  };
+}
+
+// Recombine a date + time part back into an ISO string. No date → null. When
+// allDay (or the time was left blank) we anchor to midnight local.
+function partsToIso(date: string, time: string, allDay: boolean): string | null {
+  if (!date) return null;
+  const d = new Date(`${date}T${allDay || !time ? "00:00" : time}`);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
 
-function isoToLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+// Small flag glyph for the urgent badge / toggle. `filled` paints the pennant
+// solid (urgent state); otherwise it's an outline.
+function FlagIcon({ filled, className }: { filled?: boolean; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={className}
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M4 15V4a1 1 0 0 1 1-1h12l-2.5 4L17 11H5" />
+      <line x1="4" y1="22" x2="4" y2="15" />
+    </svg>
+  );
 }
 
 // Sage dot marking a field the model read from the source. No score — just
@@ -76,6 +108,75 @@ function FieldLabel({
 const inputClass =
   "flex h-9 w-full rounded-md border border-hairline bg-surface px-3 py-1 text-body text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
+// One editable action item: a card with the description on top and a cost
+// pill + urgent toggle below. Urgent items get a warm wash and gold left
+// accent. `onChange` takes a partial patch; `onRemove` drops the item.
+function ActionItemCard({
+  item,
+  onChange,
+  onRemove,
+}: {
+  item: ActionItemInput;
+  onChange: (patch: Partial<ActionItemInput>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <li
+      className={`rounded-lg border p-3 transition-colors ${
+        item.urgent
+          ? "border-l-4 border-l-warm border-warm/30 bg-warm-surface/40"
+          : "border-hairline bg-surface"
+      }`}
+    >
+      <div className="flex pb-2 items-center justify-between gap-3">
+        <input
+          value={item.description}
+          onChange={(e) => onChange({ description: e.target.value })}
+          placeholder="Return the signed consent form"
+          className="min-w-0 flex-1 bg-transparent text-body font-medium text-ink placeholder:text-ink-mute/60 focus-visible:outline-none"
+        />
+        <div className="flex shrink-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={onRemove}
+            className="text-meta hover:text-destructive"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+
+      {/* Meta row: cost pill on the left, urgent toggle on the right. */}
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <label className="inline-flex h-9 items-center gap-1.5 rounded-md border border-hairline bg-surface px-3 text-body text-ink-soft focus-within:ring-1 focus-within:ring-ring">
+          <span className="text-ink-mute">£</span>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            aria-label="Cost estimate (£)"
+            value={item.cost_estimate_gbp ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              onChange({ cost_estimate_gbp: v === "" ? null : Number(v) });
+            }}
+            placeholder="Cost"
+            className="w-16 bg-transparent text-ink placeholder:text-ink-mute/70 focus-visible:outline-none"
+          />
+        </label>
+        <Button
+          type="button"
+          variant={item.urgent ? "warm" : "warm-outline"}
+          onClick={() => onChange({ urgent: !item.urgent })}
+          icon={<FlagIcon filled={item.urgent} />}
+        >
+          {item.urgent ? "Urgent" : "Mark urgent"}
+        </Button>
+      </div>
+    </li>
+  );
+}
+
 export default function EventForm({
   variant,
   initial,
@@ -86,8 +187,8 @@ export default function EventForm({
 }: EventFormProps) {
   const [title, setTitle] = useState(initial?.title ?? "");
   const [eventType, setEventType] = useState<EventType>(initial?.event_type ?? "other");
-  const [startTime, setStartTime] = useState(() => isoToLocalInput(initial?.start_time ?? null));
-  const [endTime, setEndTime] = useState(() => isoToLocalInput(initial?.end_time ?? null));
+  const [startParts, setStartParts] = useState(() => isoToParts(initial?.start_time ?? null));
+  const [endParts, setEndParts] = useState(() => isoToParts(initial?.end_time ?? null));
   const [isAllDay, setIsAllDay] = useState(initial?.is_all_day ?? false);
   const [location, setLocation] = useState(initial?.location ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
@@ -100,8 +201,9 @@ export default function EventForm({
     onSubmit({
       title,
       event_type: eventType,
-      start_time: toIsoOrNull(startTime) as string,
-      end_time: toIsoOrNull(endTime),
+      start_time: partsToIso(startParts.date, startParts.time, isAllDay) as string,
+      // An all-day event is single-day, so it carries no end timestamp.
+      end_time: isAllDay ? null : partsToIso(endParts.date, endParts.time, false),
       is_all_day: isAllDay,
       location: location || null,
       description: description || null,
@@ -165,33 +267,68 @@ export default function EventForm({
             </select>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-4">
+            {/* Starts: date is always editable; time greys out for all-day. */}
             <div className="space-y-1.5">
-              <FieldLabel htmlFor="start_time" extracted={extracted.start_time}>
+              <FieldLabel htmlFor="start_date" extracted={extracted.start_time}>
                 Starts
               </FieldLabel>
-              <input
-                id="start_time"
-                type="datetime-local"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                required
-                className={inputClass}
-              />
+              <div className="grid grid-cols-[240px_minmax(0,120px)] gap-2">
+                <DatePicker
+                  id="start_date"
+                  value={startParts.date}
+                  onChange={(date) => setStartParts((p) => ({ ...p, date }))}
+                  required
+                />
+                <Input
+                  id="start_time"
+                  type="time"
+                  aria-label="Start time"
+                  value={startParts.time}
+                  onChange={(e) =>
+                    setStartParts((p) => ({ ...p, time: e.target.value }))
+                  }
+                  disabled={isAllDay}
+                  className="bg-surface"
+                />
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <FieldLabel htmlFor="end_time">Ends · optional</FieldLabel>
-              <input
-                id="end_time"
-                type="datetime-local"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className={`${inputClass} ${
-                  fromExtraction && !endTime ? "border-warm" : ""
-                }`}
+            <label className="flex items-center gap-2 text-body text-ink">
+              <Checkbox
+                checked={isAllDay}
+                onCheckedChange={(checked) => setIsAllDay(checked === true)}
+                className="bg-surface"
               />
-              {fromExtraction && !endTime && (
+              All day
+            </label>
+
+            {/* Ends: optional, and the whole row greys out for all-day. */}
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="end_date">Ends · optional</FieldLabel>
+              <div className="grid grid-cols-[240px_minmax(0,120px)] gap-2">
+                <DatePicker
+                  id="end_date"
+                  value={endParts.date}
+                  onChange={(date) => setEndParts((p) => ({ ...p, date }))}
+                  disabled={isAllDay}
+                  inputClassName={
+                    !isAllDay && fromExtraction && !endParts.date ? "border-warm" : ""
+                  }
+                />
+                <Input
+                  id="end_time"
+                  type="time"
+                  aria-label="End time"
+                  value={endParts.time}
+                  onChange={(e) =>
+                    setEndParts((p) => ({ ...p, time: e.target.value }))
+                  }
+                  disabled={isAllDay}
+                  className="bg-surface"
+                />
+              </div>
+              {!isAllDay && fromExtraction && !endParts.date && !endParts.time && (
                 <p className="flex items-center gap-1.5 text-meta text-warm">
                   <span className="h-1 w-1 rounded-full bg-warm" />
                   Not in the source — add it if you know it
@@ -199,16 +336,6 @@ export default function EventForm({
               )}
             </div>
           </div>
-
-          <label className="flex items-center gap-2 text-body text-ink">
-            <input
-              type="checkbox"
-              checked={isAllDay}
-              onChange={(e) => setIsAllDay(e.target.checked)}
-              className="accent-accent"
-            />
-            All day
-          </label>
 
           <div className="space-y-1.5">
             <FieldLabel htmlFor="location" extracted={extracted.location}>
@@ -265,76 +392,20 @@ export default function EventForm({
             {actionItems.length === 0 ? (
               <p className="text-meta">No action items.</p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="space-y-3">
                 {actionItems.map((item, idx) => (
-                  <li
+                  <ActionItemCard
                     key={idx}
-                    className={`space-y-2 rounded-md border border-hairline bg-surface p-3 ${
-                      item.urgent ? "line-warm-event" : ""
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <input
-                        value={item.description}
-                        onChange={(e) =>
-                          setActionItems((prev) =>
-                            prev.map((p, i) =>
-                              i === idx ? { ...p, description: e.target.value } : p,
-                            ),
-                          )
-                        }
-                        placeholder="Bring £2 in a labelled envelope"
-                        className="flex-1 bg-surface text-body text-ink placeholder:text-ink-mute/60 focus-visible:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setActionItems((prev) => prev.filter((_, i) => i !== idx))
-                        }
-                        className="text-meta hover:text-destructive"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-1 text-meta">
-                        £
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={item.cost_estimate_gbp ?? ""}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            setActionItems((prev) =>
-                              prev.map((p, i) =>
-                                i === idx
-                                  ? { ...p, cost_estimate_gbp: v === "" ? null : Number(v) }
-                                  : p,
-                              ),
-                            );
-                          }}
-                          placeholder="cost"
-                          className="h-7 w-24 rounded-sm border border-hairline bg-surface px-2 text-meta text-ink placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        />
-                      </label>
-                      <label className="flex items-center gap-1 text-meta text-warm">
-                        <input
-                          type="checkbox"
-                          checked={item.urgent}
-                          onChange={(e) =>
-                            setActionItems((prev) =>
-                              prev.map((p, i) =>
-                                i === idx ? { ...p, urgent: e.target.checked } : p,
-                              ),
-                            )
-                          }
-                          className="accent-warm"
-                        />
-                        urgent
-                      </label>
-                    </div>
-                  </li>
+                    item={item}
+                    onChange={(patch) =>
+                      setActionItems((prev) =>
+                        prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+                      )
+                    }
+                    onRemove={() =>
+                      setActionItems((prev) => prev.filter((_, i) => i !== idx))
+                    }
+                  />
                 ))}
               </ul>
             )}
