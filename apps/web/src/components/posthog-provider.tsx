@@ -34,6 +34,10 @@ export default function PostHogProvider({
       capture_pageview: false,
       autocapture: false,
       person_profiles: "identified_only",
+      // Cookieless: store nothing on the device (no cookie, no localStorage), so
+      // no PECR consent banner is required. The funnel is unaffected because we
+      // identify by the stable Supabase user id below, not a persisted id.
+      persistence: "memory",
     });
 
     const supabase = createClient();

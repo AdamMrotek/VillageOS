@@ -17,3 +17,10 @@ export async function seedDemo(): Promise<{
 }> {
   return apiClient("/api/demo/seed", { method: "POST" });
 }
+
+/** Permanently delete the signed-in user's account and all their data.
+ *  Cascades server-side across every user-owned table. Irreversible — the
+ *  caller is responsible for confirming intent and signing out afterwards. */
+export async function deleteAccount(): Promise<void> {
+  await apiClient("/api/account", { method: "DELETE" });
+}

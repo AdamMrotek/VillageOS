@@ -17,9 +17,9 @@ VillageOS uses Supabase Auth (email + password) with `@supabase/ssr` for cookie-
 
 | Field | Value |
 | --- | --- |
-| Site URL | `https://village.co.uk` |
-| Redirect URLs | `https://village.co.uk/reset-password` |
-| | `https://www.village.co.uk/reset-password` |
+| Site URL | `https://villageos.co.uk` |
+| Redirect URLs | `https://villageos.co.uk/reset-password` |
+| | `https://www.villageos.co.uk/reset-password` |
 | | `http://localhost:3000/reset-password` |
 
 Add Vercel preview wildcard if previews need to work:
@@ -62,6 +62,10 @@ Other templates (**Confirm signup**, **Magic Link**, **Change Email**, **Invite 
 With this off, any valid access token can call `PUT /auth/v1/user` with `{password}` directly — bypassing our UI entirely. With it on, `updateUser({ password })` is rejected unless the caller is in a recovery session (just completed `verifyOtp({ type: 'recovery' })`) or supplies a `nonce` from `reauthenticate()`. Net effect: a stolen bearer token alone can no longer change the password — the attacker also needs access to the user's email.
 
 ### Custom SMTP
+
+> ✅ **Live.** VillageOS uses **Resend** as Supabase's custom SMTP; `villageos.co.uk`
+> is verified and Auth emails send from `noreply@villageos.co.uk`. The steps below
+> are the setup record. See [INTEGRATIONS.md](INTEGRATIONS.md#resend--transactional-email).
 
 Configure your own SMTP provider in **Project Settings → Authentication → SMTP Settings**. This removes the rate limit and unlocks template editing.
 

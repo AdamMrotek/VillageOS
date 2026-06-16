@@ -3,6 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import {
+  PRIVACY_NOTICE_VERSION,
+  type PrivacyConsent,
+} from "@/lib/privacy";
 
 type Role = "parent" | "provider";
 
@@ -10,14 +14,28 @@ export default function SignUpPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<Role>("parent");
+  const [consented, setConsented] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!consented) {
+      setError("Please agree to the privacy notice to continue.");
+      return;
+    }
     setLoading(true);
     setError(null);
+
+    // Stored in auth metadata so we can prove which notice version this user
+    // agreed to, and when. The timestamp is the client's clock — proportionate
+    // for a small test; auth.users.created_at is the server-authoritative
+    // backstop since consent is required to sign up.
+    const privacy_consent: PrivacyConsent = {
+      version: PRIVACY_NOTICE_VERSION,
+      accepted_at: new Date().toISOString(),
+    };
 
     const supabase = createClient();
     // The role lands in user_metadata; the handle_new_user trigger copies it
@@ -25,7 +43,7 @@ export default function SignUpPage() {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { role } },
+      options: { data: { role, privacy_consent } },
     });
 
     if (error) {
@@ -120,11 +138,38 @@ export default function SignUpPage() {
             />
           </div>
 
+          <label
+            htmlFor="consent"
+            className="flex items-start gap-2.5 text-sm text-ink-soft"
+          >
+            <input
+              id="consent"
+              type="checkbox"
+              checked={consented}
+              onChange={(e) => setConsented(e.target.checked)}
+              required
+              className="mt-0.5 h-4 w-4 shrink-0 rounded border-input text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            <span>
+              I agree to take part in this test and to VillageOS processing the
+              data I enter — including any health or religious information my
+              events may reveal about my family — as described in the{" "}
+              <Link
+                href="/privacy"
+                target="_blank"
+                className="text-ink underline underline-offset-4"
+              >
+                privacy notice
+              </Link>
+              .
+            </span>
+          </label>
+
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !consented}
             className="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
           >
             {loading ? "Creating account…" : "Create account"}

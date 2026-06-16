@@ -406,3 +406,16 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 **See also:** [apps/api/EXPERIMENTS.md](apps/api/EXPERIMENTS.md) for the methodology and event taxonomy.
 
 ---
+
+## ADR-021 — Data-protection posture for the real-parent test (UK GDPR)
+
+**Decision:** Run the early test on a deliberately minimal, proportionate UK GDPR footing rather than full launch compliance. The solo developer is the **controller**; lawful basis is **consent**, captured at sign-up as a version-stamped record (`apps/web/src/lib/privacy.ts`). A one-screen privacy notice (`apps/web/src/app/privacy/page.tsx`) discloses everything; deletion is self-serve via **Settings → Delete account** (`apps/api/app/routers/account.py`).
+
+**Key choices:**
+- **No raw-input persistence.** Pasted text and uploaded photos are sent to the extractor and only structured events are stored (`events.raw_text` dropped; images inline-only, never S3 — see ADR-018). The only stored user uploads are provider profile/cover images.
+- **LLM sub-processors disclosed + contracted.** OpenAI (vision) and Groq (text) are named in the notice; OpenAI's DPA is executed (UK→US under SCCs/UK Addendum) and training is off, Groq's DPA is auto-incorporated and Zero Data Retention is on.
+- **Cookieless analytics.** PostHog (ADR-020) runs with `persistence: "memory"` — no cookie or localStorage on the device — so PECR consent is not engaged and no banner is needed. The funnel still stitches because identity comes from the Supabase user id, not a persisted cookie.
+
+**The working checklist, tiered roadmap (Tier 0 → public launch), and current status are the canonical reference:** [DATA_PROTECTION_CHECKLIST.md](DATA_PROTECTION_CHECKLIST.md). This ADR is a pointer, not a duplicate.
+
+---
