@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -9,20 +9,13 @@ import {
   PopoverTrigger,
 } from "@repo/ui/components/popover";
 import { createClient } from "@/lib/supabase/client";
-import { useIsDemo } from "@/lib/hooks/use-is-demo";
+import { useAuthUser } from "@/lib/hooks/use-auth-user";
 
 export default function UserMenu() {
   const router = useRouter();
-  const { data: isDemo } = useIsDemo();
-  const [email, setEmail] = useState<string | null>(null);
+  const { user, isDemo } = useAuthUser();
+  const email = user?.email ?? null;
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      setEmail(data.user?.email ?? null);
-    });
-  }, []);
 
   async function handleSignOut() {
     const supabase = createClient();

@@ -2,27 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRole } from "@/lib/hooks/use-role";
-
-type NavItem = { href: string; label: string };
-
-const PARENT_ITEMS: NavItem[] = [
-  { href: "/calendar", label: "Calendar" },
-  { href: "/discover", label: "Discover" },
-];
-
-const PROVIDER_ITEMS: NavItem[] = [
-  { href: "/calendar", label: "Calendar" },
-  { href: "/provider", label: "My provider page" },
-];
+import { useNavItems } from "./nav-items";
 
 export default function NavLinks() {
   const pathname = usePathname();
-  const { data: role } = useRole();
-  const items = role === "provider" ? PROVIDER_ITEMS : PARENT_ITEMS;
+  const items = useNavItems();
 
   return (
-    <nav className="flex items-center gap-6">
+    <nav className="hidden items-center gap-6 md:flex">
       {items.map((item) => {
         const active =
           pathname === item.href || pathname.startsWith(`${item.href}/`);

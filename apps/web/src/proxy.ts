@@ -35,11 +35,13 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/sign-up") ||
     pathname.startsWith("/forgot-password");
   const isRecoveryRoute = pathname.startsWith("/reset-password");
-  // The landing page is reachable logged-out; "Try the demo" creates an
-  // anonymous session client-side, after which proxy sees the user. The privacy
-  // notice must also be readable before sign-up — it's linked from the landing
-  // page and the consent checkbox, so a logged-out visitor has to reach it.
-  const isPublicRoute = pathname === "/" || pathname.startsWith("/privacy");
+  // The landing page ("/") hosts the sign-in form and "Try the demo" pitch;
+  // it's reachable logged-out. "Try the demo" creates an anonymous session
+  // client-side, after which proxy sees the user. The privacy notice must also
+  // be readable before sign-up — it's linked from the landing page and the
+  // consent checkbox, so a logged-out visitor has to reach it.
+  const isLandingRoute = pathname === "/";
+  const isPublicRoute = isLandingRoute || pathname.startsWith("/privacy");
 
   if (!user && !isAuthRoute && !isRecoveryRoute && !isPublicRoute) {
     const url = request.nextUrl.clone();
@@ -49,7 +51,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && isAuthRoute) {
+  // A logged-in user (including anonymous demo sessions) has no use for the
+  // landing page or the auth forms — send them straight to the app.
+  if (user && (isAuthRoute || isLandingRoute)) {
     const url = request.nextUrl.clone();
     url.pathname = "/calendar";
     return NextResponse.redirect(url);
