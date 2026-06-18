@@ -118,16 +118,16 @@
   body {
     @apply bg-background text-foreground font-sans;
   }
-  /* Prevent iOS Safari/Chrome from auto-zooming on input focus.
-     Mobile browsers zoom in whenever a focused form control has a
-     font-size below 16px, so floor it at 16px on small screens.
-     Desktop keeps its intended (often text-sm/14px) sizing. */
-  @media (max-width: 767px) {
-    input,
-    select,
-    textarea {
-      font-size: 16px;
-    }
+}
+
+/* Floor form controls at 16px on mobile so iOS doesn't auto-zoom on focus.
+   Kept unlayered so it outranks the text utilities (text-sm, text-body…)
+   on these inputs, which sit in the utilities cascade layer. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
   }
 }
 
