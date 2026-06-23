@@ -17,6 +17,7 @@ domain, or onboarding a new environment.
 | Service | Role | State (2026-06-16) |
 |---|---|---|
 | **Supabase** | Auth (GoTrue) + Postgres + JWKS | ✅ Live — project `hkablmuzbizmgmmlxegl` |
+| **Google Cloud** (OAuth) | Social sign-in ("Continue with Google") | ✅ Live — Web OAuth client wired to Supabase Google provider |
 | **AWS** (Lambda + API Gateway, SAM) | Backend host | ✅ Live — `eu-north-1`, stack `villageos-api` |
 | **Vercel** | Frontend host | ✅ Live on `villageos.co.uk` (+ `village-os-web.vercel.app`) |
 | **GoDaddy** | Registrar + DNS for `villageos.co.uk` | ✅ Live — GoDaddy nameservers authoritative; records propagated |
@@ -48,9 +49,45 @@ Postgres with RLS, and JWKS public keys the API uses to verify JWTs asymmetrical
 `apps/web/src/proxy.ts`, `apps/api/app/core/auth.py`, `apps/api/app/core/db.py`.
 
 **On domain change.** Update **Auth → URL Configuration** in the dashboard:
-Site URL `https://villageos.co.uk`, add `https://villageos.co.uk/reset-password` to
-redirect URLs (documented in [AUTH.md](AUTH.md#1-url-configuration)). Otherwise
-sign-in and password-reset emails point at the wrong host.
+Site URL `https://villageos.co.uk`, add `https://villageos.co.uk/reset-password`
+and `https://villageos.co.uk/auth/callback` to redirect URLs (documented in
+[AUTH.md](AUTH.md#1-url-configuration)). Otherwise sign-in, password-reset, and
+Google sign-in return to the wrong host.
+
+---
+
+## Google Cloud — OAuth (social sign-in)
+
+**What it does.** Backs "Continue with Google" on the landing sign-in form and
+`/sign-up`. A Google Cloud **Web OAuth client** is registered with Supabase's
+**Google provider**; Supabase handles the token exchange and issues the same JWT
+as email/password. Not called from application code beyond
+`signInWithOAuth({ provider: "google" })`. See [AUTH.md](AUTH.md#google--oauth-sign-in)
+and ADR-022.
+
+**Where it's configured.**
+
+| Location | Keys / settings |
+|---|---|
+| **Google Cloud Console → APIs & Services → OAuth consent screen** | External; scopes `email`, `profile`, `openid`; published |
+| **Google Cloud Console → Credentials → OAuth client (Web)** | Authorized redirect URI `https://hkablmuzbizmgmmlxegl.supabase.co/auth/v1/callback`; JS origins = app origins + Supabase URL. Holds the **Client ID + Secret** |
+| **Supabase dashboard → Authentication → Providers → Google** | Provider enabled; Client ID + Secret pasted (secret never in repo) |
+| **Supabase dashboard → Authentication → URL Configuration → Redirect URLs** | `…/auth/callback` for prod, www, `localhost:3000`, and the preview wildcard |
+
+**Code touchpoints.** `apps/web/src/app/auth/callback/route.ts` (code exchange),
+`apps/web/src/components/google-sign-in-button.tsx`,
+`apps/web/src/app/consent/page.tsx` (post-login consent gate),
+`apps/web/src/proxy.ts` + `apps/web/src/proxy-rules.ts` (gating).
+
+**On domain change.** Add the new origin's `…/auth/callback` to the Supabase
+redirect-URL allow-list (above) **and** the new app origin to the Google client's
+Authorized JS origins. The Google **redirect URI** (the `supabase.co/auth/v1/callback`
+one) never changes — it points at Supabase, not the app.
+
+**Gotcha.** `redirect_uri_mismatch` on sign-in means the exact
+`https://<ref>.supabase.co/auth/v1/callback` string isn't in the Google client's
+**Authorized redirect URIs** (must be there, not under JS origins; no trailing
+slash; changes can take minutes to propagate).
 
 ---
 
