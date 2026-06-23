@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import GoogleSignInButton from "@/components/google-sign-in-button";
 
 export default function SignInForm() {
   const router = useRouter();
@@ -21,7 +22,14 @@ export default function SignInForm() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      setError(error.message);
+      // Supabase returns a deliberately vague "Invalid login credentials" for
+      // both wrong password and unknown email (no account enumeration). Keep
+      // that property but make the copy friendlier and point to sign-up.
+      setError(
+        error.message === "Invalid login credentials"
+          ? "Wrong email or password. No account yet? Sign up below."
+          : error.message,
+      );
       setLoading(false);
     } else {
       router.push("/calendar");
@@ -88,6 +96,14 @@ export default function SignInForm() {
           </Link>
         </p>
       </form>
+
+      <div className="flex items-center gap-3">
+        <span className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">or</span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
+      <GoogleSignInButton />
     </div>
   );
 }

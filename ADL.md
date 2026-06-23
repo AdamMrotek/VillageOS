@@ -419,3 +419,22 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 **The working checklist, tiered roadmap (Tier 0 → public launch), and current status are the canonical reference:** [DATA_PROTECTION_CHECKLIST.md](DATA_PROTECTION_CHECKLIST.md). This ADR is a pointer, not a duplicate.
 
 ---
+
+## ADR-022 — Google OAuth sign-in + consent as a one-time post-login gate
+
+**Decision:** Add "Continue with Google" alongside email/password, and move privacy-consent capture out of the sign-up form into a single post-login gate (`apps/web/src/app/consent/page.tsx`). Google uses Supabase's PKCE OAuth, which needs a server-side callback (`apps/web/src/app/auth/callback/route.ts`) to run `exchangeCodeForSession`. After login, the proxy redirects any logged-in, non-anonymous user lacking `user_metadata.privacy_consent` to the gate, which writes the version-stamped record (`apps/web/src/lib/privacy.ts`) and lets them through. The routing policy is a pure `resolveRedirect` (`apps/web/src/proxy-rules.ts`), unit-tested against the access matrix.
+
+**Reasons:**
+- **One consent path for both methods.** Google redirects away before any checkbox could be shown, so consent can't live on the button. A post-login gate captures it identically for email and Google — and exactly once. This **supersedes** the "captured at sign-up" framing in ADR-021: lawful basis and the version-stamped record are unchanged, only *when/where* consent is collected moves (after first login, before any data entry).
+- **No double checkbox, no re-prompting.** The old per-form checkbox appeared twice on `/sign-up` and re-asked returning users. The gate shows once and never again.
+- **Demo stays frictionless.** Anonymous demo sessions (ADR-016) are exempt — `is_anonymous` short-circuits the gate, so "Try the demo" is still one click into throwaway sample data.
+- **Backend untouched.** Google yields the same Supabase JWT the API already verifies asymmetrically (ADR-006/ADR-010); tier resolution (ADR-017) is unaffected.
+- **Routing policy is testable.** Splitting the pure decision from the Supabase/Next plumbing turns the access matrix into a table test (no request mocks); it also fixed a latent bug where a recovery session (ADR-011) on `/reset-password` was bounced to the gate.
+
+**Tradeoffs:**
+- **Accounts now exist briefly without a consent record** (between first login and accepting the gate). The proxy makes the gate unavoidable before any app route, so no special-category data is entered first — acceptable, and symmetric with how Google would behave anyway.
+- **Google adds an external dashboard dependency** (Google Cloud OAuth client) on top of Supabase — documented in [INTEGRATIONS.md](INTEGRATIONS.md#google-cloud--oauth-social-sign-in).
+
+**See also:** [AUTH.md](AUTH.md#google--oauth-sign-in), [INTEGRATIONS.md](INTEGRATIONS.md#google-cloud--oauth-social-sign-in), ADR-021
+
+---
