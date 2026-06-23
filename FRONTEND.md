@@ -151,6 +151,15 @@ Authentication uses Supabase SSR with server-side cookie-based sessions.
    import { createBrowserClient } from "@supabase/ssr";
    ```
 
+**OAuth ("Continue with Google"):** the shared
+`src/components/google-sign-in-button.tsx` (on the landing sign-in form and
+`/sign-up`) calls `signInWithOAuth({ provider: "google" })` with a
+`redirectTo` of `/auth/callback`. The PKCE `code` is exchanged for a session
+server-side in `src/app/auth/callback/route.ts`, then the user is redirected to
+`/calendar`. First-time users (email or Google) are sent by the proxy to the
+one-time `/consent` gate (`src/app/consent/page.tsx`) before they can use the
+app. See [AUTH.md](AUTH.md#google--oauth-sign-in).
+
 **Calling the FastAPI backend:**
 ```ts
 const { data: { session } } = await supabase.auth.getSession();

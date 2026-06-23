@@ -31,31 +31,60 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const isAuthRoute =
+  // Access matrix — what each route does per user state. The single source of
+  // truth for routing; the logic below is a direct transcription of it.
+  //
+  //   Route                                 | logged-out | needs consent | consented / demo
+  //   --------------------------------------|------------|---------------|------------------
+  //   /auth/*, /privacy, /reset-password    | pass       | pass          | pass
+  //   /, /sign-up, /forgot-password (guest) | pass       | → /consent    | → /calendar
+  //   /consent                              | → /        | pass          | → /calendar
+  //   everything else (app)                 | → /        | → /consent    | pass
+  //
+  // - /auth/*: the OAuth return arrives still logged-out (session cookies are
+  //   set only once the callback exchanges the code) — must always pass.
+  // - /privacy: the notice is linked from the consent gate, so it must be
+  //   reachable before consent is given.
+  // - /reset-password: a recovery session is "logged in", so this must bypass
+  //   both the guest-redirect and the consent gate or the reset flow breaks.
+  // - guest routes are the logged-out home (landing hosts the sign-in form +
+  //   "Try the demo", which creates an anonymous session).
+  const alwaysAllowed =
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/privacy") ||
+    pathname.startsWith("/reset-password");
+
+  const isGuestRoute =
+    pathname === "/" ||
     pathname.startsWith("/sign-up") ||
     pathname.startsWith("/forgot-password");
-  const isRecoveryRoute = pathname.startsWith("/reset-password");
-  // The landing page ("/") hosts the sign-in form and "Try the demo" pitch;
-  // it's reachable logged-out. "Try the demo" creates an anonymous session
-  // client-side, after which proxy sees the user. The privacy notice must also
-  // be readable before sign-up — it's linked from the landing page and the
-  // consent checkbox, so a logged-out visitor has to reach it.
-  const isLandingRoute = pathname === "/";
-  const isPublicRoute = isLandingRoute || pathname.startsWith("/privacy");
 
-  if (!user && !isAuthRoute && !isRecoveryRoute && !isPublicRoute) {
-    const url = request.nextUrl.clone();
-    // The landing page ("/") hosts the sign-in form, so logged-out users
-    // bounced off a protected route land there rather than a dedicated page.
-    url.pathname = "/";
-    return NextResponse.redirect(url);
+  const isConsentRoute = pathname === "/consent";
+
+  // Real (non-anonymous) accounts must record privacy consent once before they
+  // can use the app — captured at the /consent gate, written to user metadata.
+  // Demo (anonymous) sessions are exempt: the demo is throwaway sample data.
+  const needsConsent =
+    !!user && !user.is_anonymous && !user.user_metadata?.privacy_consent;
+
+  let redirectTo: string | null = null;
+  if (alwaysAllowed) {
+    redirectTo = null;
+  } else if (!user) {
+    // Logged-out: only the guest routes are reachable; everything else → home.
+    redirectTo = isGuestRoute ? null : "/";
+  } else if (needsConsent) {
+    // Logged-in without consent: nothing but the gate.
+    redirectTo = isConsentRoute ? null : "/consent";
+  } else {
+    // Logged-in + consented (or demo): app is open; keep them off the
+    // logged-out home and the now-pointless gate.
+    redirectTo = isGuestRoute || isConsentRoute ? "/calendar" : null;
   }
 
-  // A logged-in user (including anonymous demo sessions) has no use for the
-  // landing page or the auth forms — send them straight to the app.
-  if (user && (isAuthRoute || isLandingRoute)) {
+  if (redirectTo && redirectTo !== pathname) {
     const url = request.nextUrl.clone();
-    url.pathname = "/calendar";
+    url.pathname = redirectTo;
     return NextResponse.redirect(url);
   }
 
