@@ -438,3 +438,28 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 **See also:** [AUTH.md](AUTH.md#google--oauth-sign-in), [INTEGRATIONS.md](INTEGRATIONS.md#google-cloud--oauth-social-sign-in), ADR-021
 
 ---
+
+## ADR-023 — Drop PostHog; self-host experiments + a `admin.villageos.co.uk` dashboard
+
+**Decision:** Remove PostHog entirely (**supersedes ADR-020**) and own both jobs it did in Supabase: variant **assignment** via a deterministic hash bucketed against an `experiments` config row, and event **storage** via a generic `analytics_events` table. The A/B readout moves from PostHog HogQL tiles to Postgres views, surfaced in a new internal Next.js app (`apps/admin`, `admin.villageos.co.uk`) gated to `role = 'admin'`.
+
+**Reasons:**
+- **No external dependency in the Lambda hot path.** Assignment was the only PostHog call per extraction and the source of the `sync_mode`/Lambda flush hazard (ADR-020 / EXPERIMENT_DASHBOARD.md). It's now a local `sha256(sub + key)` bucket; only a short-cached config read touches the DB.
+- **The analysis layer was already self-hosted.** `build_experiment_charts.py` rendered its own charts and used PostHog purely as a SQL store — so the swap is to `analytics_events` + two Postgres views (`arrayJoin` → `jsonb_array_elements_text`).
+- **Remote kill-switch kept without PostHog.** The `experiments` row (`enabled`, `variants` weights) retunes or disables a test with no deploy — the one ADR-020 benefit worth preserving.
+- **Cost wasn't the driver; ownership and portfolio value were.** PostHog sat well under free tier. What's removed (session replay, autocapture, native significance, hosted flags) was all unused.
+
+**Impact:**
+- `supabase/migrations/20260626000000_self_host_experiments.sql` — `experiments` + `analytics_events` (RLS: users insert only their own events; reads admin-only) + the two `security_invoker` readout views.
+- `apps/api/app/core/experiments.py` — hash assignment + config kill-switch + `capture_event`/`capture_assignment` into `analytics_events`; PostHog SDK + settings removed.
+- `apps/api/app/routers/analytics.py` (client funnel ingest, `distinct_id` stamped from the JWT) and `admin.py` (`require_admin` reads `profiles.role` via the service role — not the user-editable JWT metadata).
+- `apps/web` — `posthog-js` removed; the three captures now POST to `/api/analytics/events` via `src/lib/analytics.ts`.
+- `apps/admin` — new gated dashboard; deleted `scripts/provision_posthog_dashboard.py` and `scripts/build_experiment_charts.py`.
+
+**Future A/B tests:** insert an `experiments` row → call the assignment helper with that key → emit events to `analytics_events` → add a readout query + chart in `apps/admin`. No PostHog, no deploy to change a split.
+
+**Note on ADR-021:** the "cookieless PostHog analytics" point no longer applies — analytics is first-party in our own database, so PECR is engaged even less than before. Lawful basis and the consent record are unchanged.
+
+**See also:** [apps/api/EXPERIMENTS.md](apps/api/EXPERIMENTS.md), [SELF_HOSTED_EXPERIMENTS_PLAN.md](SELF_HOSTED_EXPERIMENTS_PLAN.md)
+
+---

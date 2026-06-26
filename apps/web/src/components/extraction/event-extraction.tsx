@@ -2,8 +2,8 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
+import { track } from "@/lib/analytics";
 import { diffExtractionFields } from "@/lib/extraction-diff";
 import { ApiError } from "@/lib/api-fetch";
 import { createClient } from "@/lib/supabase/client";
@@ -17,10 +17,6 @@ import type {
 import EventForm from "./event-form";
 import ExtractMessage, { type CaptureImage } from "./extract-message";
 import ExtractingDialog from "./extracting-dialog";
-
-// Inlined NEXT_PUBLIC_* at build time. Gates the funnel captures so a build
-// without a PostHog key stays silent instead of warning on every extract.
-const PH_ENABLED = !!process.env.NEXT_PUBLIC_POSTHOG_KEY;
 
 // Capture and form share a persistent split: the form sits beside the capture
 // box and is editable throughout (manual entry is just typing into it).
@@ -55,7 +51,6 @@ function extractedFields(
 
 export default function EventExtraction() {
   const router = useRouter();
-  const posthog = usePostHog();
 
   const extractMutation = useExtractEvent();
   const createMutation = useCreateEvent();
@@ -118,16 +113,14 @@ export default function EventExtraction() {
           setExtraction({ draft: res.event, experiment: res.experiment, inputType });
           setFormKey((k) => k + 1);
           setPhase("review");
-          if (PH_ENABLED) {
-            posthog.capture("extraction_shown", {
-              variant: res.experiment?.variant,
-              provider: res.experiment?.provider,
-              model: res.experiment?.model,
-              input_type: inputType,
-              attempt,
-              re_extract: attempt > 1,
-            });
-          }
+          track("extraction_shown", {
+            variant: res.experiment?.variant,
+            provider: res.experiment?.provider,
+            model: res.experiment?.model,
+            input_type: inputType,
+            attempt,
+            re_extract: attempt > 1,
+          });
         },
         onError: (error) => {
           if (cancelledRef.current) return;
@@ -163,8 +156,8 @@ export default function EventExtraction() {
   function handleDiscard() {
     // Strongest negative signal: the draft was thrown away, not fixed. Capture
     // the assigned arm before clearing it.
-    if (PH_ENABLED && extraction) {
-      posthog.capture("extraction_discarded", {
+    if (extraction) {
+      track("extraction_discarded", {
         variant: extraction.experiment?.variant,
         provider: extraction.experiment?.provider,
         model: extraction.experiment?.model,
@@ -184,9 +177,9 @@ export default function EventExtraction() {
       onSuccess: () => {
         // Conversion + primary metric: only when this event came from an
         // extraction (manual entries have no draft to diff against).
-        if (PH_ENABLED && extraction) {
+        if (extraction) {
           const editedFields = diffExtractionFields(extraction.draft, submitted);
-          posthog.capture("extraction_accepted", {
+          track("extraction_accepted", {
             variant: extraction.experiment?.variant,
             provider: extraction.experiment?.provider,
             model: extraction.experiment?.model,

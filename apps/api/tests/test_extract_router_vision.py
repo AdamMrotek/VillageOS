@@ -1,7 +1,7 @@
 """Router-level vision behavior (ADR-019): image requests ride the same A/B
 flag as text — the assigned arm's stack serves both paths. With the experiment
 disabled (assignment passthrough) vision falls back to the pinned default
-(openai/gpt-4o) so prod behaviour without PostHog is unchanged."""
+(openai/gpt-4o) so prod behaviour with the experiment disabled is unchanged."""
 
 from datetime import datetime
 from types import SimpleNamespace

@@ -54,8 +54,9 @@ security** (ADR-010).
   contained *within* freeform event text. Not separately structured, categorised,
   or profiled.
 - Provider users additionally store profile/cover images (AWS S3).
-- Analytics: cookieless product analytics (PostHog, `persistence: "memory"`),
-  keyed to the stable Supabase user id — no device cookie/localStorage.
+- Analytics: first-party product analytics stored in our own Supabase database
+  (no third-party analytics processor, ADR-023), keyed to the stable Supabase
+  user id — no device cookie/localStorage.
 
 **Context.**
 - ~10 friendly testers at the current stage, instructed to use
@@ -73,8 +74,9 @@ display the user's calendar. No advertising, no profiling, no secondary use.
 - **Data subjects:** the one-screen privacy notice (`/privacy`) sets
   expectations; the small test cohort can give direct feedback. Formal
   consultation is proportionate to defer until launch scale.
-- **Processors:** OpenAI, Groq, Supabase, AWS, PostHog — reviewed via their
-  published DPAs/sub-processor terms.
+- **Processors:** OpenAI, Groq, Supabase, AWS — reviewed via their published
+  DPAs/sub-processor terms. (Analytics is first-party in Supabase, ADR-023 — no
+  separate analytics processor.)
 - **DPO:** none appointed (not required at this scale); owner acts as contact.
 
 ## 4. Necessity and proportionality

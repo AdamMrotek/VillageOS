@@ -16,8 +16,8 @@ phone camera / file picker
 ```
 
 The image travels **inline as a base64 data URL and is never persisted** — no
-S3, no CDN, redacted from DEBUG logs (`_redact_messages`), never captured to
-PostHog. Same `instructor` contract, quota metering, and draft-review UI as
+S3, no CDN, redacted from DEBUG logs (`_redact_messages`), never written to
+analytics. Same `instructor` contract, quota metering, and draft-review UI as
 text extraction.
 
 ## Decisions (rationale in ADR-018)

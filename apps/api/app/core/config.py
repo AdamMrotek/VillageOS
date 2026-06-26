@@ -31,10 +31,6 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     groq_api_key: str | None = None
 
-    # Online experiments — unset key disables experiments entirely.
-    posthog_api_key: str | None = None
-    posthog_host: str = "https://eu.i.posthog.com"
-
     # Provider-cover uploads (S3 presigned POST → CloudFront)
     aws_region: str = "eu-north-1"
     provider_cover_bucket: str | None = None

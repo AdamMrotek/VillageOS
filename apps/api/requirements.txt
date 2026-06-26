@@ -3,7 +3,7 @@
 #
 # Direct (top-level) dependencies this lock is derived from:
 #   fastapi, uvicorn[standard], python-dotenv, PyJWT, cryptography, httpx,
-#   supabase, python-json-logger, instructor, openai, mangum, boto3, posthog,
+#   supabase, python-json-logger, instructor, openai, mangum, boto3,
 #   pydantic-settings
 #
 # The full pinned list below is exhaustive (direct + transitive) so that
@@ -57,7 +57,6 @@ multidict==6.7.1
 openai==2.41.1
 packaging==26.2
 postgrest==2.31.0
-posthog==7.18.1
 propcache==0.5.2
 pycparser==3.0
 pydantic==2.13.4

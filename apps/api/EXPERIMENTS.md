@@ -1,5 +1,11 @@
 # Experimentation
 
+> **Self-hosted since 2026-06-26 (ADR-023).** PostHog is gone. Assignment is a
+> deterministic hash bucketed against the `experiments` config row; events land in
+> the `analytics_events` table; the readout is two Postgres views surfaced in the
+> `admin.villageos.co.uk` dashboard (`apps/admin`). The event taxonomy and
+> decision rule below are unchanged — only the plumbing moved.
+
 Evals ask *"is the extracted field correct against a golden set?"* — offline, on
 inputs we control. Experiments ask what evals can't: *"do real parents act on the
 draft, and which fields do they fix?"* — online, on inputs we don't. The eval is a
@@ -56,9 +62,13 @@ offline eval flags on relative dates. The diff is computed in
 
 ## Events
 
+All events are rows in `analytics_events` (`event`, `distinct_id`, `properties`, `ts`).
+`extraction_assigned` is written server-side; the rest are POSTed by the web client
+to `/api/analytics/events`, where `distinct_id` is stamped from the JWT `sub`.
+
 | Event | Emitted by | Key properties |
 |---|---|---|
-| `extraction_assigned` | API (server) | `$feature/extraction-model`, `provider`, `model` |
+| `extraction_assigned` | API (server) | `variant`, `provider`, `model` |
 | `extraction_shown` | web (on draft render) | `variant`, `provider`, `model`, `input_type`, `attempt`, `re_extract` |
 | `extraction_accepted` | web (on event create) | `variant`, `input_type`, `n_edited`, `edited_fields` |
 | `extraction_discarded` | web (on draft discard) | `variant`, `provider`, `model`, `input_type` |
@@ -69,15 +79,19 @@ accept/discard.
 ## How assignment works
 
 - **Server-authoritative.** The arm is chosen in
-  [`app/core/experiments.py`](./app/core/experiments.py) via the PostHog flag
-  `extraction-model`, keyed on the user (`sub`), and logged (`extraction_assigned`).
+  [`app/core/experiments.py`](./app/core/experiments.py) for the `extraction-model`
+  experiment, keyed on the user (`sub`), and logged (`extraction_assigned`).
   Tamper-proof, survives a web-SDK failure.
-- **Deterministic.** PostHog hashes `sub + flag key`, so a user always sees the same
-  arm — across extractions and across text/image. The web SDK `identify()`s with the
-  same Supabase id, so server and client events stitch into one funnel.
-- **Disabled-by-default.** No `POSTHOG_API_KEY` ⇒ everyone gets the production
-  default, no captures, no behaviour change. Assignment runs *after* the per-tier
-  quota guard, never bypassing it.
+- **Deterministic.** A `sha256(sub + experiment key)` bucket is walked against the
+  weights in the `experiments` config row, so a user always sees the same arm —
+  across extractions and across text/image. Server and client events share the
+  same Supabase id as `distinct_id`, so they stitch into one funnel.
+- **Config-driven kill-switch.** The `experiments` row (`enabled`, `variants`)
+  retunes the split or disables the test with no deploy. Read behind a short TTL
+  cache, so it isn't a per-request network call.
+- **Disabled-by-default.** Experiment row absent/`enabled = false` (or no Supabase
+  service key) ⇒ everyone gets the production default, no captures, no behaviour
+  change. Assignment runs *after* the per-tier quota guard, never bypassing it.
 
 ## Running it at low traffic
 
@@ -98,9 +112,11 @@ result;** a fabricated p-value would be the anti-signal.
 
 ## Reading the results
 
-- **Online:** the provisioned **"Extraction model A/B"** PostHog dashboard
-  (`scripts/provision_posthog_dashboard.py`) — conversion, discard rate, mean
-  `n_edited`, edit-rate by variant × input_type, most-edited fields, re-extract rate.
+- **Online:** the **`admin.villageos.co.uk`** dashboard (`apps/admin`), reading
+  `GET /api/admin/experiments/extraction` — two Postgres views
+  (`experiment_extraction_outcomes`, `experiment_extraction_field_edits`):
+  shown-vs-accepted per arm and per-field edit rate. Enable the experiment row and
+  capture events first, or the charts read empty.
 - **Offline anchor:** re-run the eval and read `llm_duration_ms` /
   `input_length_chars` / `tokens_used` per row in `evals/extraction/results.jsonl`:
   ```bash

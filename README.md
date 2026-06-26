@@ -161,9 +161,10 @@ offline golden eval to online behaviour. Hypothesis, decision rule, metrics, and
 readout in [`apps/api/EXPERIMENTS.md`](./apps/api/EXPERIMENTS.md).
 
 - **Server-authoritative assignment.** The arm is chosen on the API
-  (`app/core/experiments.py`) via a PostHog flag keyed on the user id —
-  tamper-proof, deterministic, logged next to the extraction telemetry. Disabled
-  cleanly when no key is set; never bypasses the per-tier quota guard.
+  (`app/core/experiments.py`) by a deterministic `sha256(sub + key)` bucket
+  against the `experiments` config row (ADR-023) — tamper-proof, deterministic,
+  logged next to the extraction telemetry. Disabled cleanly when the experiment
+  row is off; never bypasses the per-tier quota guard.
 - **Primary metric: field-edit rate, not binary accept-rate.** The mean number of
   fields a user changes between draft and created event — a count carries far more
   signal per observation than a binary, the only honest readout at portfolio

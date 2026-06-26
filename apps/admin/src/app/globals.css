@@ -1,0 +1,270 @@
+/* VillageOS admin — warm Meadow-style palette, ported from the old
+   build_experiment_charts.py renderer. Self-contained (no Tailwind / @repo/ui)
+   to keep this internal dashboard lean. */
+
+:root {
+  --bg: #f6f1e7;
+  --card: #fffdf8;
+  --ink: #2f2a24;
+  --muted: #6b6358;
+  --line: #e2d9c8;
+  --grid: #ece3d3;
+  --accent: #3f7d6e;
+  --warm: #b5703a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  padding: 40px 20px 80px;
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.wrap {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 26px;
+  margin: 0 0 4px;
+  letter-spacing: -0.01em;
+}
+
+.sub {
+  color: var(--muted);
+  margin: 0;
+  font-size: 14px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: #efe7d7;
+  padding: 1px 5px;
+  border-radius: 5px;
+  font-size: 0.86em;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px 26px 20px;
+  margin: 22px 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.card h2 {
+  font-size: 18px;
+  margin: 0 0 2px;
+  letter-spacing: -0.01em;
+}
+
+.card .q {
+  color: var(--muted);
+  font-size: 13.5px;
+  margin: 0 0 16px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 4px 0 18px;
+}
+
+.lg {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sw {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  display: inline-block;
+}
+
+.chart {
+  position: relative;
+  padding-left: 38px;
+}
+
+.plot {
+  position: relative;
+  height: 300px;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+}
+
+.gl {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--grid);
+}
+
+.gl b {
+  position: absolute;
+  left: -38px;
+  top: -8px;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+  width: 34px;
+  text-align: right;
+}
+
+.groups {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  z-index: 1;
+}
+
+.grp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+  flex: 1;
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 100%;
+}
+
+.bar {
+  width: 30px;
+  border-radius: 5px 5px 0 0;
+  position: relative;
+  transition: filter 0.15s;
+}
+
+.bar:hover {
+  filter: brightness(1.07);
+}
+
+.bar .v {
+  position: absolute;
+  top: -19px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.bar.zero {
+  min-height: 3px;
+  opacity: 0.4;
+}
+
+.xrow {
+  display: flex;
+  justify-content: space-around;
+}
+
+.xc {
+  flex: 1;
+  text-align: center;
+}
+
+.xl {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.xl.muted,
+.lg.muted {
+  color: var(--muted);
+}
+
+.caveat {
+  background: #fbf3ea;
+  border-left: 3px solid var(--warm);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  margin-top: 22px;
+}
+
+/* Auth + status surfaces */
+.center {
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.login-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px 30px;
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.login-card input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 15px;
+  background: #fff;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+button.link {
+  background: none;
+  color: var(--muted);
+  padding: 4px;
+  font-weight: 500;
+  text-decoration: underline;
+}
+
+.err {
+  color: #b23b2b;
+  font-size: 13.5px;
+}
