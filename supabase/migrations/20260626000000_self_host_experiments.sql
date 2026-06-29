@@ -1,7 +1,7 @@
 -- Self-hosted experiments — drops PostHog for both jobs it did:
 --   (1) variant-assignment config + remote kill-switch  (experiments)
 --   (2) the event sink the A/B readouts aggregate over   (analytics_events)
--- See SELF_HOSTED_EXPERIMENTS_PLAN.md and apps/api/EXPERIMENTS.md.
+-- See apps/api/EXPERIMENTS.md.
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- experiments — one row per A/B test: the config and remote kill-switch.
@@ -52,7 +52,7 @@ CREATE POLICY "users_insert_own_events" ON analytics_events
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- A/B readout views — the self-hosted equivalents of the PostHog HogQL tiles
--- (apps/api/EXPERIMENT_DASHBOARD.md §4). security_invoker = on means they run
+-- (apps/api/EXPERIMENTS.md, "Reading the results"). security_invoker = on means they run
 -- with the caller's RLS: anon/authenticated see nothing (no SELECT policy on the
 -- base table); the service-role client bypasses RLS and reads everything.
 

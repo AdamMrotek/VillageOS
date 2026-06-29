@@ -4,7 +4,7 @@ Gated to `role = 'admin'`. The role is read from the `profiles` table via the
 service-role client, not from the JWT, because `user_metadata.role` is
 user-editable and so can't be trusted as an authorization boundary. The
 experiment readouts come straight from the Postgres views that replaced the
-PostHog HogQL tiles (see supabase migration + apps/api/EXPERIMENT_DASHBOARD.md).
+PostHog HogQL tiles (see supabase migration + apps/api/EXPERIMENTS.md).
 """
 
 import logging
@@ -36,8 +36,16 @@ def require_admin(user: dict = Depends(get_current_user)) -> dict:
 @router.get("/experiments/extraction")
 async def extraction_experiment(_: dict = Depends(require_admin)) -> dict:
     """The two A/B readouts the dashboard renders: outcomes per arm, and per-field
-    edit rate. Read direction only at low N (see EXPERIMENTS.md)."""
+    edit rate. Read direction only at low N (see EXPERIMENTS.md).
+
+    A transient view/DB error degrades to empty readouts (the dashboard shows its
+    "no data yet" state) rather than surfacing a raw 500 — consistent with how the
+    rest of the admin/capture paths fail soft."""
     db = get_admin_db()
-    outcomes = db.table("experiment_extraction_outcomes").select("*").execute().data or []
-    field_edits = db.table("experiment_extraction_field_edits").select("*").execute().data or []
+    try:
+        outcomes = db.table("experiment_extraction_outcomes").select("*").execute().data or []
+        field_edits = db.table("experiment_extraction_field_edits").select("*").execute().data or []
+    except Exception:
+        logger.exception("experiment_readout_failed", extra={"event": "experiment_readout_failed"})
+        return {"outcomes": [], "field_edits": []}
     return {"outcomes": outcomes, "field_edits": field_edits}

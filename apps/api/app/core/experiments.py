@@ -1,6 +1,6 @@
 """Online experiment harness — self-hosted variant assignment + event capture.
 
-Replaces PostHog (dropped 2026-06-26, see SELF_HOSTED_EXPERIMENTS_PLAN.md). The
+Replaces PostHog (dropped 2026-06-26, see apps/api/EXPERIMENTS.md). The
 two jobs PostHog used to do now live in Supabase:
 
   * **Assignment** — a deterministic hash of (user_id + experiment key), bucketed
@@ -117,7 +117,10 @@ def _bucket(user_id: str, key: str) -> float:
     """Deterministic [0, 1) bucket from (user_id, experiment key). Same inputs ->
     same bucket forever, so a user keeps their arm across calls and input types."""
     digest = hashlib.sha256(f"{user_id}:{key}".encode()).hexdigest()
-    return int(digest[:8], 16) / 0xFFFFFFFF
+    # Divide by 2**32 (the count of 8-hex-digit values), not 2**32 - 1 (the max),
+    # so the result is a true half-open [0, 1): a digest of "ffffffff" yields
+    # 0.99999…, never exactly 1.0 (which would match no arm in _pick_variant).
+    return int(digest[:8], 16) / 0x100000000
 
 
 def _pick_variant(bucket: float, weights: dict[str, float], default: str) -> str:

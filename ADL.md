@@ -444,7 +444,7 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 **Decision:** Remove PostHog entirely (**supersedes ADR-020**) and own both jobs it did in Supabase: variant **assignment** via a deterministic hash bucketed against an `experiments` config row, and event **storage** via a generic `analytics_events` table. The A/B readout moves from PostHog HogQL tiles to Postgres views, surfaced in a new internal Next.js app (`apps/admin`, `admin.villageos.co.uk`) gated to `role = 'admin'`.
 
 **Reasons:**
-- **No external dependency in the Lambda hot path.** Assignment was the only PostHog call per extraction and the source of the `sync_mode`/Lambda flush hazard (ADR-020 / EXPERIMENT_DASHBOARD.md). It's now a local `sha256(sub + key)` bucket; only a short-cached config read touches the DB.
+- **No external dependency in the Lambda hot path.** Assignment was the only PostHog call per extraction and the source of the `sync_mode`/Lambda flush hazard (ADR-020 / apps/api/EXPERIMENTS.md). It's now a local `sha256(sub + key)` bucket; only a short-cached config read touches the DB.
 - **The analysis layer was already self-hosted.** `build_experiment_charts.py` rendered its own charts and used PostHog purely as a SQL store — so the swap is to `analytics_events` + two Postgres views (`arrayJoin` → `jsonb_array_elements_text`).
 - **Remote kill-switch kept without PostHog.** The `experiments` row (`enabled`, `variants` weights) retunes or disables a test with no deploy — the one ADR-020 benefit worth preserving.
 - **Cost wasn't the driver; ownership and portfolio value were.** PostHog sat well under free tier. What's removed (session replay, autocapture, native significance, hosted flags) was all unused.
@@ -460,6 +460,6 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 
 **Note on ADR-021:** the "cookieless PostHog analytics" point no longer applies — analytics is first-party in our own database, so PECR is engaged even less than before. Lawful basis and the consent record are unchanged.
 
-**See also:** [apps/api/EXPERIMENTS.md](apps/api/EXPERIMENTS.md), [SELF_HOSTED_EXPERIMENTS_PLAN.md](SELF_HOSTED_EXPERIMENTS_PLAN.md)
+**See also:** [apps/api/EXPERIMENTS.md](apps/api/EXPERIMENTS.md)
 
 ---

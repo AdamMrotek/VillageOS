@@ -1,270 +1,102 @@
-/* VillageOS admin — warm Meadow-style palette, ported from the old
-   build_experiment_charts.py renderer. Self-contained (no Tailwind / @repo/ui)
-   to keep this internal dashboard lean. */
+@import "tailwindcss";
+@import "tw-animate-css";
 
+/* Pull class names out of the shared @repo/ui source so Tailwind generates them. */
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
+
+/*
+ * VillageOS admin — warm Meadow-style palette, expressed through the shadcn
+ * token names so @repo/ui's Card / Chart components theme correctly. Kept close
+ * to the old hand-rolled dashboard's cream-and-green look.
+ */
 :root {
-  --bg: #f6f1e7;
-  --card: #fffdf8;
-  --ink: #2f2a24;
-  --muted: #6b6358;
-  --line: #e2d9c8;
-  --grid: #ece3d3;
-  --accent: #3f7d6e;
-  --warm: #b5703a;
+  /* Neutrals */
+  --bg:       40 38% 93%;   /* #F6F1E7 */
+  --surface:  51 100% 99%;  /* #FFFDF8 */
+  --hairline: 39 33% 84%;   /* #E2D9C8 */
+
+  /* Ink */
+  --ink:      33 13% 16%;   /* #2F2A24 */
+  --ink-mute: 35 10% 38%;   /* #6B6358 */
+
+  /* Accents */
+  --accent-green: 165 33% 37%; /* #3F7D6E */
+  --warm:         26 51% 47%;  /* #B5703A */
+
+  /* shadcn token aliases */
+  --background:             var(--bg);
+  --foreground:             var(--ink);
+  --card:                   var(--surface);
+  --card-foreground:        var(--ink);
+  --popover:                var(--surface);
+  --popover-foreground:     var(--ink);
+  --primary:                var(--accent-green);
+  --primary-foreground:     var(--surface);
+  --secondary:              var(--hairline);
+  --secondary-foreground:   var(--ink);
+  --muted:                  var(--hairline);
+  --muted-foreground:       var(--ink-mute);
+  --accent:                 var(--accent-green);
+  --accent-foreground:      var(--surface);
+  --destructive:            6 63% 46%; /* warm brick red */
+  --destructive-foreground: var(--surface);
+  --border:                 var(--hairline);
+  --input:                  var(--hairline);
+  --ring:                   var(--accent-green);
+  --radius:                 0.5rem;
+
+  /* Chart series — referenced by ChartContainer via the chart config. */
+  --chart-1: var(--accent-green); /* control / accepted */
+  --chart-2: var(--warm);         /* treatment */
+  --chart-3: 210 20% 63%;         /* shown — muted slate #8AA0B8 */
+  --chart-4: 35 10% 38%;
+  --chart-5: 39 33% 70%;
 }
 
-* {
-  box-sizing: border-box;
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-warm: hsl(var(--warm));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--ink);
-  padding: 40px 20px 80px;
-  font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-}
-
-.wrap {
-  max-width: 920px;
-  margin: 0 auto;
-}
-
-h1 {
-  font-size: 26px;
-  margin: 0 0 4px;
-  letter-spacing: -0.01em;
-}
-
-.sub {
-  color: var(--muted);
-  margin: 0;
-  font-size: 14px;
-}
-
-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  background: #efe7d7;
-  padding: 1px 5px;
-  border-radius: 5px;
-  font-size: 0.86em;
-}
-
-.card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 24px 26px 20px;
-  margin: 22px 0;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-}
-
-.card h2 {
-  font-size: 18px;
-  margin: 0 0 2px;
-  letter-spacing: -0.01em;
-}
-
-.card .q {
-  color: var(--muted);
-  font-size: 13.5px;
-  margin: 0 0 16px;
-}
-
-.legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 4px 0 18px;
-}
-
-.lg {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.sw {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  display: inline-block;
-}
-
-.chart {
-  position: relative;
-  padding-left: 38px;
-}
-
-.plot {
-  position: relative;
-  height: 300px;
-}
-
-.grid {
-  position: absolute;
-  inset: 0;
-}
-
-.gl {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 1px dashed var(--grid);
-}
-
-.gl b {
-  position: absolute;
-  left: -38px;
-  top: -8px;
-  font-size: 11px;
-  color: var(--muted);
-  font-weight: 500;
-  width: 34px;
-  text-align: right;
-}
-
-.groups {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  justify-content: space-around;
-  align-items: flex-end;
-  z-index: 1;
-}
-
-.grp {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  height: 100%;
-  justify-content: flex-end;
-  flex: 1;
-}
-
-.bars {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  height: 100%;
-}
-
-.bar {
-  width: 30px;
-  border-radius: 5px 5px 0 0;
-  position: relative;
-  transition: filter 0.15s;
-}
-
-.bar:hover {
-  filter: brightness(1.07);
-}
-
-.bar .v {
-  position: absolute;
-  top: -19px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.bar.zero {
-  min-height: 3px;
-  opacity: 0.4;
-}
-
-.xrow {
-  display: flex;
-  justify-content: space-around;
-}
-
-.xc {
-  flex: 1;
-  text-align: center;
-}
-
-.xl {
-  margin-top: 10px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.xl.muted,
-.lg.muted {
-  color: var(--muted);
-}
-
-.caveat {
-  background: #fbf3ea;
-  border-left: 3px solid var(--warm);
-  border-radius: 0 8px 8px 0;
-  padding: 10px 14px;
-  font-size: 13px;
-  margin-top: 22px;
-}
-
-/* Auth + status surfaces */
-.center {
-  min-height: 70vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  text-align: center;
-}
-
-.login-card {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 28px 30px;
-  width: 100%;
-  max-width: 360px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.login-card input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font-size: 15px;
-  background: #fff;
-}
-
-button {
-  font: inherit;
-  cursor: pointer;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-button.link {
-  background: none;
-  color: var(--muted);
-  padding: 4px;
-  font-weight: 500;
-  text-decoration: underline;
-}
-
-.err {
-  color: #b23b2b;
-  font-size: 13.5px;
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
 }

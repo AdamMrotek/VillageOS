@@ -1,7 +1,10 @@
-.PHONY: frontend backend be-reload docker seed eval
+.PHONY: frontend admin backend be-reload docker seed eval
 
 frontend:
 	cd apps/web && pnpm dev
+
+admin:
+	cd apps/admin && pnpm dev
 
 backend:
 	cd apps/api && . .venv/bin/activate && uvicorn main:app --reload

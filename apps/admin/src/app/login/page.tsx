@@ -2,6 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
 import { createClient } from "@/lib/supabase/client";
 
 /** Email + password sign-in. Admins use their normal VillageOS account; the API
@@ -28,30 +36,36 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="wrap center">
-      <h1>VillageOS Admin</h1>
-      <form className="login-card" onSubmit={onSubmit}>
-        <input
-          type="email"
-          placeholder="Email"
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        {error && <p className="err">{error}</p>}
-        <button type="submit" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"}
-        </button>
-      </form>
-    </div>
+    <main className="mx-auto flex min-h-svh max-w-sm flex-col items-center justify-center px-5">
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle className="text-center text-xl">VillageOS Admin</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form className="flex flex-col gap-3" onSubmit={onSubmit}>
+            <Input
+              type="email"
+              placeholder="Email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            <Input
+              type="password"
+              placeholder="Password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            <Button type="submit" disabled={busy}>
+              {busy ? "Signing in…" : "Sign in"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </main>
   );
 }
