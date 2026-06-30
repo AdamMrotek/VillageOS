@@ -184,3 +184,20 @@ class TestConfigCache:
         experiments._load_config(EXTRACTION_MODEL_FLAG)
         assert calls["n"] == 1
         experiments._config_cache.clear()
+
+    def test_invalidate_forces_refetch(self, monkeypatch):
+        """An admin write calls invalidate_config so the next read re-fetches,
+        rather than serving a stale enabled flag until the TTL lapses."""
+        experiments._config_cache.clear()
+        calls = {"n": 0}
+
+        def _fetch(key):
+            calls["n"] += 1
+            return _enabled({"control": 1.0})
+
+        monkeypatch.setattr(experiments, "_fetch_config", _fetch)
+        experiments._load_config(EXTRACTION_MODEL_FLAG)
+        experiments.invalidate_config(EXTRACTION_MODEL_FLAG)
+        experiments._load_config(EXTRACTION_MODEL_FLAG)
+        assert calls["n"] == 2
+        experiments._config_cache.clear()

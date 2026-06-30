@@ -113,6 +113,13 @@ def _load_config(key: str) -> _ExperimentConfig | None:
     return cfg
 
 
+def invalidate_config(key: str) -> None:
+    """Drop the cached config row for `key` so the next read re-fetches. Called
+    after an admin writes the row (e.g. toggling `enabled`) so the kill-switch
+    flip takes effect at once, rather than within the TTL window."""
+    _config_cache.pop(key, None)
+
+
 def _bucket(user_id: str, key: str) -> float:
     """Deterministic [0, 1) bucket from (user_id, experiment key). Same inputs ->
     same bucket forever, so a user keeps their arm across calls and input types."""

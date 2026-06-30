@@ -24,6 +24,8 @@ import {
   ApiError,
   NotAuthenticated,
   adminGet,
+  adminPatch,
+  type ExperimentConfig,
   type ExtractionReadout,
 } from "@/lib/api";
 
@@ -104,6 +106,85 @@ function GroupedBarCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Enable/disable card for the extraction A/B. Owns its own fetch + update so
+ *  the readout above it stays untouched; by the time it renders the parent has
+ *  already cleared the auth/forbidden gates, so failures here are surfaced
+ *  inline rather than redirecting. */
+function ExperimentToggle() {
+  const [config, setConfig] = useState<ExperimentConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    adminGet<ExperimentConfig>("/api/admin/experiments/extraction/config")
+      .then((c) => !cancelled && setConfig(c))
+      .catch((e) => {
+        if (!cancelled)
+          setError(e instanceof Error ? e.message : "Failed to load config");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function toggle() {
+    if (!config || pending) return;
+    const next = !config.enabled;
+    setPending(true);
+    setError(null);
+    setConfig({ ...config, enabled: next }); // optimistic
+    try {
+      const updated = await adminPatch<ExperimentConfig>(
+        "/api/admin/experiments/extraction/config",
+        { enabled: next },
+      );
+      setConfig(updated);
+    } catch (e) {
+      setConfig({ ...config, enabled: !next }); // revert
+      setError(e instanceof Error ? e.message : "Failed to update");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="mb-6 flex items-center justify-between gap-4 rounded-lg border px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">
+          Extraction A/B experiment
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {error
+            ? error
+            : !config
+              ? "Loading…"
+              : config.enabled
+                ? "Enabled — traffic is split across arms."
+                : "Disabled — every user gets the control arm."}
+        </p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={config?.enabled ?? false}
+        aria-label="Toggle extraction experiment"
+        disabled={!config || pending}
+        onClick={toggle}
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+          config?.enabled ? "bg-primary" : "bg-muted-foreground/30"
+        }`}
+      >
+        <span
+          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+            config?.enabled ? "translate-x-5" : "translate-x-0.5"
+          }`}
+        />
+      </button>
+    </div>
   );
 }
 
@@ -193,6 +274,8 @@ export default function DashboardPage() {
           </Button>
         </p>
       </header>
+
+      <ExperimentToggle />
 
       <div className="flex flex-col gap-6">
         <GroupedBarCard

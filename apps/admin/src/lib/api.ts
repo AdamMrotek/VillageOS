@@ -16,8 +16,9 @@ export class ApiError extends Error {
   }
 }
 
-/** GET an admin endpoint with the current session's bearer token. */
-export async function adminGet<T>(path: string): Promise<T> {
+/** Call an admin endpoint with the current session's bearer token. Throws
+ *  NotAuthenticated when there's no session and ApiError on a non-2xx. */
+async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const supabase = createClient();
   const {
     data: { session },
@@ -26,7 +27,11 @@ export async function adminGet<T>(path: string): Promise<T> {
 
   const res = await fetch(`${API_URL}${path}`, {
     cache: "no-store",
-    headers: { Authorization: `Bearer ${session.access_token}` },
+    ...init,
+    headers: {
+      Authorization: `Bearer ${session.access_token}`,
+      ...init?.headers,
+    },
   });
   if (!res.ok) {
     let detail = await res.text();
@@ -37,7 +42,22 @@ export async function adminGet<T>(path: string): Promise<T> {
     }
     throw new ApiError(res.status, detail);
   }
-  return res.json();
+  // 204 (no body) callers don't read the result; everything else is JSON.
+  return res.status === 204 ? (undefined as T) : res.json();
+}
+
+/** GET an admin endpoint. */
+export function adminGet<T>(path: string): Promise<T> {
+  return adminFetch<T>(path);
+}
+
+/** PATCH an admin endpoint with a JSON body. */
+export function adminPatch<T>(path: string, body: unknown): Promise<T> {
+  return adminFetch<T>(path, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 // ── The /api/admin/experiments/extraction response shape ───────────────────
@@ -62,4 +82,11 @@ export type FieldEditRow = {
 export type ExtractionReadout = {
   outcomes: OutcomeRow[];
   field_edits: FieldEditRow[];
+};
+
+// ── The /api/admin/experiments/extraction/config response shape ─────────────
+export type ExperimentConfig = {
+  enabled: boolean;
+  variants: Record<string, number>;
+  default_variant: string;
 };
