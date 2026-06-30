@@ -22,3 +22,10 @@ def configure_logging() -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(get_settings().log_level.upper())
+
+    # Third-party HTTP internals are extremely chatty at DEBUG/INFO (per-frame
+    # HTTP/2 + HPACK decode lines, one INFO per outbound request). Pin them to
+    # WARNING so app logs — the access log and our own events — stay readable
+    # even when LOG_LEVEL=DEBUG.
+    for noisy in ("httpcore", "httpx", "hpack", "h2", "hpack.hpack", "hpack.table"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)

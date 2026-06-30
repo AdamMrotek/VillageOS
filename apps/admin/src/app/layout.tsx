@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Nav } from "@/components/Nav";
 
 export const metadata: Metadata = {
   title: "VillageOS Admin",
-  description: "Internal dashboards for VillageOS experiments.",
+  description: "Internal dashboards for VillageOS experiments and evals.",
 };
 
 export default function RootLayout({
@@ -11,7 +12,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Nav />
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,27 +1,7 @@
-import { useState } from "react";
-import type { EvalRow } from "../types";
-import { formatCost } from "../lib/results";
+import type { EvalRow } from "@/lib/evals/types";
+import { formatCost } from "@/lib/evals/results";
 import { Score } from "./Score";
-
-// public/golden is a symlink to apps/api/tests/golden; the image extension
-// varies per case (.jpg/.png/...), so walk the candidates until one loads.
-const GOLDEN_EXTS = ["jpg", "png", "jpeg", "webp"];
-
-function GoldenImage({ caseId }: { caseId: string }) {
-  const [extIdx, setExtIdx] = useState(0);
-  if (extIdx >= GOLDEN_EXTS.length) return null;
-  const src = `/golden/${caseId}.${GOLDEN_EXTS[extIdx]}`;
-  return (
-    <a href={src} target="_blank" rel="noreferrer" className="block w-fit">
-      <img
-        src={src}
-        alt={`Golden input image for ${caseId}`}
-        onError={() => setExtIdx((i) => i + 1)}
-        className="max-h-72 rounded-lg border border-hairline"
-      />
-    </a>
-  );
-}
+import { GoldenImage } from "./GoldenImage";
 
 function fmt(value: unknown): string {
   if (value === null || value === undefined) return "—";

@@ -87,7 +87,8 @@ report are almost entirely about whether the model gets `start_time` right.
   optional `action_items_keywords` (list of substrings that must all appear in
   the joined action-item descriptions, case-insensitive).
 - **Results:** `apps/api/evals/extraction/results.jsonl` (append-only history,
-  one JSON row per case × model × prompt; rendered by `apps/eval-viewer`).
+  one JSON row per case × model × prompt; rendered on the admin app's `/evals`
+  page).
 
 ### How to run
 

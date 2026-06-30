@@ -205,7 +205,7 @@ SUPABASE_SECRET_KEY=sb_secret_...
 ## ADR-012 — GitHub Actions CI with ruff for the Python API
 
 **Decision:** A single `.github/workflows/ci.yml` runs on every push to `main` and every PR, with two parallel jobs:
-- **Web** (`pnpm -F @repo/web lint` → `tsc --noEmit` → `pnpm build`) covering `apps/web` + `apps/eval-viewer` via Turborepo.
+- **Web** (`pnpm -F @repo/web lint` → `tsc --noEmit` → `pnpm build`) covering `apps/web` + `apps/admin` via Turborepo.
 - **API** (`ruff check .` → `ruff format --check .` → `pytest`) covering `apps/api`.
 
 Eval runs against real LLM providers are deliberately kept *out* of CI for now; when wired up they will live in a separate manual-only `evals.yml` (`workflow_dispatch`).

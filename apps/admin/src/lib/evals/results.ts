@@ -1,29 +1,4 @@
-import type { EvalRow, RunGroup } from "../types";
-
-export async function fetchRows(): Promise<EvalRow[]> {
-  // public/results.jsonl is a symlink to apps/api/evals/extraction/results.jsonl
-  // so the dev server always serves the latest data.
-  const res = await fetch("/results.jsonl", { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(
-      `Failed to load results.jsonl (${res.status}). ` +
-        `Ensure apps/eval-viewer/public/results.jsonl exists (symlink to the API JSONL).`
-    );
-  }
-  const text = await res.text();
-  const rows: EvalRow[] = [];
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      rows.push(JSON.parse(trimmed));
-    } catch {
-      // Skip malformed lines; the JSONL is append-only and partial writes are
-      // unlikely but not impossible.
-    }
-  }
-  return rows;
-}
+import type { EvalRow, RunGroup } from "./types";
 
 export function groupByRun(rows: EvalRow[]): RunGroup[] {
   const byRun = new Map<string, EvalRow[]>();

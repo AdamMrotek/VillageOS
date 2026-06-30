@@ -60,6 +60,32 @@ export function adminPatch<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
+/** GET an admin endpoint that returns binary (e.g. a golden image). The bearer
+ *  header can't ride on a plain <img src>, so the caller turns this blob into an
+ *  object URL. Throws NotAuthenticated / ApiError like the JSON helpers. */
+export async function adminGetBlob(path: string): Promise<Blob> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) throw new NotAuthenticated();
+
+  const res = await fetch(`${API_URL}${path}`, {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!res.ok) {
+    let detail = await res.text();
+    try {
+      detail = JSON.parse(detail)?.detail ?? detail;
+    } catch {
+      // non-JSON body — keep raw text
+    }
+    throw new ApiError(res.status, detail);
+  }
+  return res.blob();
+}
+
 // ── The /api/admin/experiments/extraction response shape ───────────────────
 export type OutcomeRow = {
   model: string;

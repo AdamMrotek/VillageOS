@@ -14,4 +14,5 @@ be-reload:
 	cd apps/api && . .venv/bin/activate && uvicorn main:app --reload
 
 eval:
-	cd apps/eval-viewer && pnpm dev
+	@echo "Eval results + golden set now live in the admin app at /evals and /golden."
+	cd apps/admin && pnpm dev

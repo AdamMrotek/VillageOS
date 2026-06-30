@@ -1,5 +1,5 @@
-import type { EvalRow, RunGroup } from "../types";
-import { formatCost } from "../lib/results";
+import type { EvalRow, RunGroup } from "@/lib/evals/types";
+import { formatCost } from "@/lib/evals/results";
 import { ContenderTable } from "./ContenderTable";
 import { CaseDetail } from "./CaseDetail";
 import { Score } from "./Score";

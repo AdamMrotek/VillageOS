@@ -113,9 +113,10 @@ extraction quality as a tested contract, not a vibe.
 - **Per-provider instructor modes** (OpenAI → TOOLS, Groq → JSON) and the
   frozen-`today` harness are documented in
   [`apps/api/EVALS.md`](./apps/api/EVALS.md).
-- **Eval viewer** (`apps/eval-viewer`) is a Vite dashboard that renders
-  `results.jsonl` as a browsable pass/fail matrix — see the
-  [screenshot above](#screenshots--demo).
+- **Eval viewer** lives in the admin app (`apps/admin`) at `/evals` — a browsable
+  pass/fail matrix of runs, plus a **Golden set** tab showing each case's input
+  text and expected result. Served by the admin-gated `/api/admin/evals/*`
+  endpoints.
 
 ### Model selection — current findings
 

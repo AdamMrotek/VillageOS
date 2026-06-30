@@ -1,4 +1,4 @@
-import { scoreClass } from "../lib/results";
+import { scoreClass } from "@/lib/evals/results";
 
 const STYLES: Record<string, string> = {
   "score-good": "bg-accent-soft text-accent-dark",

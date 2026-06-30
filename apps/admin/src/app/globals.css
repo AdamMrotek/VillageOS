@@ -20,8 +20,17 @@
   --ink-mute: 35 10% 38%;   /* #6B6358 */
 
   /* Accents */
-  --accent-green: 165 33% 37%; /* #3F7D6E */
-  --warm:         26 51% 47%;  /* #B5703A */
+  --accent-green:      165 33% 37%; /* #3F7D6E */
+  --accent-green-soft: 165 30% 86%; /* light tint for score chips / strengths */
+  --accent-green-dark: 165 35% 24%; /* pass / ✓ text */
+  --warm:              26 51% 47%;  /* #B5703A */
+  --warm-surface:      30 55% 88%;  /* light warm tint for vision / weaknesses */
+
+  /* Eval surfaces + ink — the eval pages carry the Meadow utility classes that
+   * the old eval-viewer used; these fill the tokens admin didn't already need. */
+  --surface-alt:  42 30% 88%;
+  --ink-soft:     34 11% 27%;
+  --cat-deadline: 6 63% 46%; /* shared with --destructive below */
 
   /* shadcn token aliases */
   --background:             var(--bg);
@@ -76,6 +85,20 @@
 
   --color-warm: hsl(var(--warm));
 
+  /* Eval-page Meadow tokens (ported from the retired eval-viewer). */
+  --color-surface:      hsl(var(--surface));
+  --color-surface-alt:  hsl(var(--surface-alt));
+  --color-hairline:     hsl(var(--hairline));
+  --color-ink:          hsl(var(--ink));
+  --color-ink-soft:     hsl(var(--ink-soft));
+  --color-ink-mute:     hsl(var(--ink-mute));
+  --color-accent-soft:  hsl(var(--accent-green-soft));
+  --color-accent-dark:  hsl(var(--accent-green-dark));
+  --color-warm-surface: hsl(var(--warm-surface));
+  --color-cat-deadline: hsl(var(--cat-deadline));
+
+  --font-display: "Newsreader", Georgia, serif;
+
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
   --color-chart-3: hsl(var(--chart-3));
@@ -98,5 +121,46 @@
   }
   body {
     @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+/* Typographic utilities the ported eval components rely on (carried over from the
+ * retired eval-viewer's index.css so its markup renders unchanged). */
+@layer components {
+  .text-hero {
+    font-family: var(--font-display);
+    font-size: 44px;
+    line-height: 1.05;
+    font-weight: 400;
+    letter-spacing: -0.025em;
+  }
+  .text-title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    line-height: 1.2;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+  }
+  .text-heading {
+    font-family: var(--font-display);
+    font-size: 20px;
+    line-height: 1.2;
+    font-weight: 400;
+  }
+  .text-eyebrow {
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: hsl(var(--ink-mute));
+  }
+  .text-meta {
+    font-size: 11px;
+    line-height: 1.4;
+    color: hsl(var(--ink-mute));
+  }
+  .text-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
 }

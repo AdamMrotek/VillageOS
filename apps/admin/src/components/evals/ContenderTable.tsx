@@ -1,5 +1,5 @@
-import type { EvalRow } from "../types";
-import { formatCost } from "../lib/results";
+import type { EvalRow } from "@/lib/evals/types";
+import { formatCost } from "@/lib/evals/results";
 import { Score } from "./Score";
 
 interface ModelStats {

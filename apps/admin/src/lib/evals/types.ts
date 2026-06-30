@@ -53,3 +53,12 @@ export interface RunGroup {
   timestamp: string; // pretty
   rows: EvalRow[];
 }
+
+/** One golden-dataset case, as served by GET /api/admin/evals/golden. */
+export interface GoldenCase {
+  case_id: string;
+  input_text: string;
+  expected: Record<string, unknown>;
+  has_image: boolean;
+  image_ext: string | null;
+}
