@@ -71,7 +71,10 @@ export async function adminGetBlob(path: string): Promise<Blob> {
   if (!session) throw new NotAuthenticated();
 
   const res = await fetch(`${API_URL}${path}`, {
-    cache: "no-store",
+    // Honour the response's Cache-Control. The only caller is golden images,
+    // which are immutable fixtures the server marks cacheable — so re-expanding
+    // a case or reloading serves from the browser cache instead of refetching.
+    cache: "default",
     headers: { Authorization: `Bearer ${session.access_token}` },
   });
   if (!res.ok) {

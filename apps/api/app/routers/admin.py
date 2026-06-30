@@ -253,4 +253,6 @@ async def golden_case_image(case_id: str, _: dict = Depends(require_admin)) -> F
     image_path = _golden_image_path(case_id)
     if image_path is None:
         raise HTTPException(status_code=404, detail="No image for this case")
-    return FileResponse(image_path)
+    # Golden images are immutable fixtures — let the browser keep them in its
+    # private cache so re-expanding a case or reloading the page doesn't refetch.
+    return FileResponse(image_path, headers={"Cache-Control": "private, max-age=86400"})

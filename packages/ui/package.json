@@ -4,6 +4,7 @@
   "private": true,
   "exports": {
     "./components/*": "./src/components/*.tsx",
+    "./custom_components/*": "./src/custom_components/*.tsx",
     "./lib/*": "./src/lib/*.ts",
     "./hooks/*": "./src/hooks/*.ts"
   },
@@ -11,9 +12,11 @@
   "devDependencies": {
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "next": "16.2.4",
     "typescript": "^5"
   },
   "peerDependencies": {
+    "next": "^16",
     "react": "^19",
     "react-dom": "^19"
   },

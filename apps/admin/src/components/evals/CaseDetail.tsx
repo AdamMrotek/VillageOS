@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import type { EvalRow } from "@/lib/evals/types";
 import { formatCost } from "@/lib/evals/results";
 import { Score } from "./Score";
@@ -117,8 +120,16 @@ export function CaseDetail({
   rows: EvalRow[];
 }) {
   const isVision = rows.some((r) => r.input_type === "image");
+  // Track open state so the image only mounts (and fetches) once expanded.
+  // A native <details> keeps its children in the DOM while collapsed, so an
+  // unconditional <GoldenImage> would fetch every vision case's image on page
+  // load — defeating the lazy reveal.
+  const [open, setOpen] = useState(false);
   return (
-    <details className="group mt-4 overflow-hidden rounded-xl border border-hairline bg-background open:bg-surface">
+    <details
+      className="group mt-4 overflow-hidden rounded-xl border border-hairline bg-background open:bg-surface"
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
       <summary className="flex cursor-pointer items-center gap-4 px-5 py-3.5 list-none [&::-webkit-details-marker]:hidden">
         <span className="text-mono font-semibold">{caseId}</span>
         {isVision && (
@@ -135,7 +146,7 @@ export function CaseDetail({
         </span>
       </summary>
       <div className="px-5 pb-5">
-        {isVision && (
+        {isVision && open && (
           <div className="mb-4 pt-2">
             <div className="text-eyebrow mb-2">Input image</div>
             <GoldenImage caseId={caseId} />
