@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -128,7 +128,7 @@ async def update_extraction_config(
     db = get_admin_db()
     res = (
         db.table("experiments")
-        .update({"enabled": body.enabled, "updated_at": datetime.now(timezone.utc).isoformat()})
+        .update({"enabled": body.enabled, "updated_at": datetime.now(UTC).isoformat()})
         .eq("key", EXTRACTION_MODEL_FLAG)
         .execute()
     )

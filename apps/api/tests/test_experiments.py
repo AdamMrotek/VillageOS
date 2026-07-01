@@ -63,7 +63,10 @@ class TestDisabled:
 
     def test_disabled_flag_is_passthrough_control(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-        _use_config(monkeypatch, {"enabled": False, "variants": {"control": 1.0}, "default_variant": "control"})
+        _use_config(
+            monkeypatch,
+            {"enabled": False, "variants": {"control": 1.0}, "default_variant": "control"},
+        )
         assert assign_extraction_variant("u1") == ("control", None, None)
 
     def test_capture_is_noop_without_supabase_key(self, monkeypatch):
@@ -152,7 +155,11 @@ class TestCapture:
             {
                 "event": "extraction_assigned",
                 "distinct_id": "u1",
-                "properties": {"variant": "treatment", "provider": "openai", "model": "gpt-4o-mini"},
+                "properties": {
+                    "variant": "treatment",
+                    "provider": "openai",
+                    "model": "gpt-4o-mini",
+                },
             }
         ]
 

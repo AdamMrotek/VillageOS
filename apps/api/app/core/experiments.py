@@ -171,7 +171,9 @@ def assign_extraction_variant(
         return _DEFAULT_VARIANT, None, None
 
     default = cfg.get("default_variant") or _DEFAULT_VARIANT
-    variant = _pick_variant(_bucket(user_id, EXTRACTION_MODEL_FLAG), cfg.get("variants") or {}, default)
+    variant = _pick_variant(
+        _bucket(user_id, EXTRACTION_MODEL_FLAG), cfg.get("variants") or {}, default
+    )
     if variant not in _VARIANT_TO_CONFIG:
         variant = _DEFAULT_VARIANT
 
