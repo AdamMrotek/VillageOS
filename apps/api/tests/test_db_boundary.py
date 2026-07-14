@@ -101,9 +101,7 @@ def _sites_referencing(symbol: str) -> set[str]:
 def _offenders(sites: set[str], allowlist: set[str]) -> set[str]:
     allowed_files = {entry for entry in allowlist if "::" not in entry}
     return {
-        site
-        for site in sites
-        if site not in allowlist and site.split("::")[0] not in allowed_files
+        site for site in sites if site not in allowlist and site.split("::")[0] not in allowed_files
     }
 
 
@@ -139,9 +137,7 @@ class TestAdminDbBoundary:
             ("supabase_secret_key", SECRET_KEY_ALLOWLIST),
         ]:
             stale = _stale_entries(_sites_referencing(symbol), allowlist)
-            assert not stale, (
-                f"Allowlist entries no longer reference {symbol}: {sorted(stale)}"
-            )
+            assert not stale, f"Allowlist entries no longer reference {symbol}: {sorted(stale)}"
 
     def test_supabase_clients_only_built_in_core_db(self):
         offenders = _offenders(_sites_referencing("create_client"), CLIENT_FACTORY_ALLOWLIST)
