@@ -1,7 +1,7 @@
 import { Toaster } from "@repo/ui/components/sonner";
 import BottomNav from "@/components/nav/bottom-nav";
 import TopNav from "@/components/nav/top-nav";
-import QueryProvider from "@/components/query-provider";
+import QueryProvider from "@repo/ui/custom_components/query-provider";
 
 export default function AppLayout({
   children,

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import QueryProvider from "@repo/ui/custom_components/query-provider";
 import { Nav } from "@/components/Nav";
 
 export const metadata: Metadata = {
@@ -13,8 +14,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Nav />
-        {children}
+        <QueryProvider>
+          <Nav />
+          {children}
+        </QueryProvider>
       </body>
     </html>
   );

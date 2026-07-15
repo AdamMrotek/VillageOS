@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 import Logo from "@repo/ui/custom_components/logo";
 import Navbar from "@repo/ui/custom_components/navbar";
+import UserMenu from "@repo/ui/custom_components/user-menu";
 
 const LINKS = [
   { href: "/", label: "Experiments" },
@@ -12,9 +13,9 @@ const LINKS = [
 ];
 
 /** Top nav shared across the admin dashboards. Hidden on /login (which has no
- *  session yet). Each page keeps its own auth gate, so the nav is purely
- *  navigation — it doesn't fetch. Uses the shared brand + container so it matches
- *  the main web app, with an "Admin" tag to distinguish the surface. */
+ *  session yet). Each page keeps its own auth gate. Uses the shared brand +
+ *  container so it matches the main web app, with an "Admin" tag to distinguish
+ *  the surface, plus the shared UserMenu (email + sign out; no settings here). */
 export function Nav() {
   const pathname = usePathname();
   if (pathname === "/login") return null;
@@ -53,6 +54,7 @@ export function Nav() {
           </nav>
         </>
       }
+      right={<UserMenu settingsHref={null} signOutHref="/login" />}
     />
   );
 }

@@ -7,11 +7,22 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@repo/ui/components/popover";
-import { createClient } from "@/lib/supabase/client";
-import { useAuthUser } from "@/lib/hooks/use-auth-user";
+} from "../components/popover";
+import { createClient } from "../lib/supabase";
+import { useAuthUser } from "../hooks/use-auth-user";
 
-export default function UserMenu() {
+/** Avatar popover with the signed-in email, an optional settings link and sign
+ *  out. Requires a react-query provider (it reads useAuthUser). Demo (anonymous)
+ *  sessions never see the settings link — they have no account to manage. */
+export default function UserMenu({
+  settingsHref = "/settings",
+  signOutHref = "/",
+}: {
+  /** Where the Settings item links; pass null to omit it entirely. */
+  settingsHref?: string | null;
+  /** Where to land after signing out. */
+  signOutHref?: string;
+}) {
   const router = useRouter();
   const { user, isDemo } = useAuthUser();
   const email = user?.email ?? null;
@@ -20,7 +31,7 @@ export default function UserMenu() {
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/");
+    router.push(signOutHref);
     router.refresh();
   }
 
@@ -40,9 +51,9 @@ export default function UserMenu() {
             {email}
           </p>
         )}
-        {!isDemo && (
+        {settingsHref && !isDemo && (
           <Link
-            href="/settings"
+            href={settingsHref}
             onClick={() => setOpen(false)}
             className="block rounded-sm px-2.5 py-2 text-body text-ink transition-colors hover:bg-accent"
           >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { authUserQuery, roleOf, type AppRole } from "@/lib/hooks/use-auth-user";
+import { authUserQuery, roleOf, type AppRole } from "@repo/ui/hooks/use-auth-user";
 
 export type { AppRole };
 

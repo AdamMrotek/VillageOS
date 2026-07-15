@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import GoogleSignInButton from "@/components/google-sign-in-button";
+import { createClient } from "@repo/ui/lib/supabase";
+import GoogleSignInButton from "@repo/ui/custom_components/google-sign-in-button";
 
 type Role = "parent" | "provider";
 

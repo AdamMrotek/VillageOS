@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { track } from "@/lib/analytics";
 import { diffExtractionFields } from "@/lib/extraction-diff";
 import { ApiError } from "@/lib/api-fetch";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@repo/ui/lib/supabase";
 import { useIsDemo } from "@/lib/hooks/use-is-demo";
 import { useCreateEvent, useExtractEvent } from "@/lib/queries/events";
 import type {
