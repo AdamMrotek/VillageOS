@@ -16,8 +16,8 @@ phone camera / file picker
 ```
 
 The image travels **inline as a base64 data URL and is never persisted** — no
-S3, no CDN, redacted from DEBUG logs (`_redact_messages`), never captured to
-PostHog. Same `instructor` contract, quota metering, and draft-review UI as
+S3, no CDN, redacted from DEBUG logs (`_redact_messages`), never written to
+analytics. Same `instructor` contract, quota metering, and draft-review UI as
 text extraction.
 
 ## Decisions (rationale in ADR-018)
@@ -55,8 +55,8 @@ WhatsApp and no-year cases but dropped an action-item keyword on the leaflet
 (6/7 rules) and scored one point lower on the noisy photo. Cost surprise:
 mini's image-token multiplier (~27.7k prompt tokens vs gpt-4o's ~3k) erodes
 its price edge — $0.0042 vs $0.0083 per extraction, ~½ rather than the ~16×
-text-path saving. Results are filterable under the **Vision** tab in
-`apps/eval-viewer`.
+text-path saving. Results are filterable under the **Vision** tab on the admin
+app's `/evals` page.
 
 **Groq Scout vision (run 2026-06-12)**: the blocker behind decision #3 is
 cleared — Groq's JSON mode **does** accept OpenAI-style `image_url` content

@@ -1,0 +1,166 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Pull class names out of the shared @repo/ui source so Tailwind generates them. */
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
+
+/*
+ * VillageOS admin — warm Meadow-style palette, expressed through the shadcn
+ * token names so @repo/ui's Card / Chart components theme correctly. Kept close
+ * to the old hand-rolled dashboard's cream-and-green look.
+ */
+:root {
+  /* Neutrals */
+  --bg:       40 38% 93%;   /* #F6F1E7 */
+  --surface:  51 100% 99%;  /* #FFFDF8 */
+  --hairline: 39 33% 84%;   /* #E2D9C8 */
+
+  /* Ink */
+  --ink:      33 13% 16%;   /* #2F2A24 */
+  --ink-mute: 35 10% 38%;   /* #6B6358 */
+
+  /* Accents */
+  --accent-green:      165 33% 37%; /* #3F7D6E */
+  --accent-green-soft: 165 30% 86%; /* light tint for score chips / strengths */
+  --accent-green-dark: 165 35% 24%; /* pass / ✓ text */
+  --warm:              26 51% 47%;  /* #B5703A */
+  --warm-surface:      30 55% 88%;  /* light warm tint for vision / weaknesses */
+
+  /* Eval surfaces + ink — the eval pages carry the Meadow utility classes that
+   * the old eval-viewer used; these fill the tokens admin didn't already need. */
+  --surface-alt:  42 30% 88%;
+  --ink-soft:     34 11% 27%;
+  --cat-deadline: 6 63% 46%; /* shared with --destructive below */
+
+  /* shadcn token aliases */
+  --background:             var(--bg);
+  --foreground:             var(--ink);
+  --card:                   var(--surface);
+  --card-foreground:        var(--ink);
+  --popover:                var(--surface);
+  --popover-foreground:     var(--ink);
+  --primary:                var(--accent-green);
+  --primary-foreground:     var(--surface);
+  --secondary:              var(--hairline);
+  --secondary-foreground:   var(--ink);
+  --muted:                  var(--hairline);
+  --muted-foreground:       var(--ink-mute);
+  --accent:                 var(--accent-green);
+  --accent-foreground:      var(--surface);
+  --destructive:            6 63% 46%; /* warm brick red */
+  --destructive-foreground: var(--surface);
+  --border:                 var(--hairline);
+  --input:                  var(--hairline);
+  --ring:                   var(--accent-green);
+  --radius:                 0.5rem;
+
+  /* Chart series — referenced by ChartContainer via the chart config. */
+  --chart-1: var(--accent-green); /* control / accepted */
+  --chart-2: var(--warm);         /* treatment */
+  --chart-3: 210 20% 63%;         /* shown — muted slate #8AA0B8 */
+  --chart-4: 35 10% 38%;
+  --chart-5: 39 33% 70%;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-warm: hsl(var(--warm));
+
+  /* Eval-page Meadow tokens (ported from the retired eval-viewer). */
+  --color-surface:      hsl(var(--surface));
+  --color-surface-alt:  hsl(var(--surface-alt));
+  --color-hairline:     hsl(var(--hairline));
+  --color-ink:          hsl(var(--ink));
+  --color-ink-soft:     hsl(var(--ink-soft));
+  --color-ink-mute:     hsl(var(--ink-mute));
+  --color-accent-soft:  hsl(var(--accent-green-soft));
+  --color-accent-dark:  hsl(var(--accent-green-dark));
+  --color-warm-surface: hsl(var(--warm-surface));
+  --color-cat-deadline: hsl(var(--cat-deadline));
+
+  --font-display: "Newsreader", Georgia, serif;
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+/* Typographic utilities the ported eval components rely on (carried over from the
+ * retired eval-viewer's index.css so its markup renders unchanged). */
+@layer components {
+  .text-hero {
+    font-family: var(--font-display);
+    font-size: 44px;
+    line-height: 1.05;
+    font-weight: 400;
+    letter-spacing: -0.025em;
+  }
+  .text-title {
+    font-family: var(--font-display);
+    font-size: 26px;
+    line-height: 1.2;
+    font-weight: 400;
+    letter-spacing: -0.015em;
+  }
+  .text-heading {
+    font-family: var(--font-display);
+    font-size: 20px;
+    line-height: 1.2;
+    font-weight: 400;
+  }
+  .text-eyebrow {
+    font-size: 9.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    color: hsl(var(--ink-mute));
+  }
+  .text-meta {
+    font-size: 11px;
+    line-height: 1.4;
+    color: hsl(var(--ink-mute));
+  }
+  .text-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -1,5 +1,3 @@
-from functools import lru_cache
-
 from fastapi import Depends
 from supabase import Client, create_client
 
@@ -22,10 +20,15 @@ def get_user_db(auth: AuthContext = Depends(get_auth)) -> Client:
     return client
 
 
-@lru_cache(maxsize=1)
 def get_admin_db() -> Client:
     """Service-role client that bypasses RLS. Server-only, admin paths only
     (cron jobs, AI ingestion, cross-user reads). Never inject into user routes.
+
+    Built per call rather than cached: sync admin dependencies run in FastAPI's
+    threadpool, and a single shared client's HTTP/2 connection is not safe under
+    concurrent use across threads — a page that fires several admin requests at
+    once would hit intermittent protocol errors (surfacing as 500s). A fresh
+    client per request gives each its own connection, mirroring get_user_db.
     """
     settings = get_settings()
     return create_client(

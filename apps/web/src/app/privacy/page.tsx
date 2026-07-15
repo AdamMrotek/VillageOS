@@ -156,11 +156,11 @@ export default function PrivacyPage() {
               <strong className="text-ink">OpenAI</strong> — AI extraction (see
               above).
             </li>
-            <li>
-              <strong className="text-ink">PostHog</strong> — product analytics,
-              so we can see which features are used and fix problems.
-            </li>
           </ul>
+          <p className="text-ink-soft">
+            Product analytics (which features are used, so we can fix problems)
+            run on our own Supabase database — no third-party analytics service.
+          </p>
         </section>
 
         <section className="space-y-2">

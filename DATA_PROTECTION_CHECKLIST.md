@@ -48,11 +48,12 @@ The minimum to test with ~10 friendly parents without taking on real risk.
 - [x] **Basic security hygiene.** ✅ Supabase auth on; **RLS load-bearing** so a
       query can't reach another user's rows (ADR-010); secrets in env / Lambda
       vars, not the repo.
-- [x] **Settle analytics & cookies (PECR).** ✅ Confirmed 2026-06-16. PostHog runs
-      **cookieless** (`persistence: "memory"` in `posthog-provider.tsx`) — it
-      stores nothing on the device (no cookie, no localStorage), so no PECR
-      consent banner is required. The funnel is unaffected: users are identified
-      by their stable Supabase id, not a persisted cookie.
+- [x] **Settle analytics & cookies (PECR).** ✅ Confirmed 2026-06-16; updated
+      2026-06-26 (ADR-023). Analytics is now **first-party** — events are written
+      to our own Supabase `analytics_events` table, with **no third-party
+      analytics service and nothing stored on the device** (no cookie, no
+      localStorage), so no PECR consent banner is required. The funnel is keyed by
+      the stable Supabase user id, not a persisted cookie.
 
 ## Tier 1 — When real (not fake) personal data is involved
 

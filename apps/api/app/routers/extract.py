@@ -58,9 +58,9 @@ async def extract(
         )
 
     # A/B arm assignment (move 1, redefined per ADR-019): each arm is a provider
-    # stack covering both paths, so vision requests ride the same flag as text.
-    # Server-authoritative + deterministic per user. Disabled (no
-    # POSTHOG_API_KEY) -> ("control", None, None): no override, so text is
+    # stack covering both paths, so vision requests ride the same experiment as
+    # text. Server-authoritative + deterministic per user. Disabled (experiment
+    # row absent/disabled) -> ("control", None, None): no override, so text is
     # byte-for-byte the pre-experiment path and vision falls back to the pinned
     # default below. Funnel events carry input_type, so per-path analysis
     # filters cleanly.

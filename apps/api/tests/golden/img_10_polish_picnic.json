@@ -1,0 +1,8 @@
+{
+  "event_type": "other",
+  "start_time": "2026-06-21T13:00:00",
+  "end_time": "2026-06-21T19:00:00",
+  "is_all_day": false,
+  "transcript": "PIKNIK RODZINNY — POSK 2026. Niedziela, 21 czerwca 2026. Ravenscourt Park, Hammersmith, London W6 0UA. 13:00–19:00. Wstęp wolny. Gwiazda wieczoru: PAPA DANCE. DJ Lena, Double Mirror, Elwira Rejnowicz, Klaudia i Tomek. Strefa gastro, muzyka na żywo, atrakcje rodzinne, zabawy dla dzieci. Organizatorzy: Biblioteka Polska POSK w Londynie.",
+  "notes": "Real iPhone screenshot of a Polish-language community flyer (family picnic in London). First non-English case: model must read Polish ('niedziela, 21 czerwca 2026' = Sunday 21 June 2026, 'wstęp wolny' = free entry) and extract a full date with year plus an explicit 13:00–19:00 range. No action items — the flyer asks for nothing, so no keyword check. A community picnic has no clean EventType, so 'other' is expected. 'transcript' is the faithful text of the image, used only by the text-only LLM judge."
+}
