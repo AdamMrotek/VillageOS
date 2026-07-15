@@ -133,9 +133,9 @@ export default function SignUpPage() {
           </button>
         </form>
 
-        {/* Separate "Google" block beneath the email form. It carries its own
-            consent checkbox (the email form above has its own), so the two
-            sign-up paths are visually and functionally independent. */}
+        {/* Separate "Google" block beneath the email form. Like the email path,
+            it collects no consent here — first sign-in lands on the /consent
+            gate (see the handleSubmit comment above). */}
         <div className="flex items-center gap-3">
           <span className="h-px flex-1 bg-border" />
           <span className="text-xs text-muted-foreground">or</span>

@@ -39,15 +39,16 @@ export default function AccountSettings({
     setDeleting(true);
     try {
       await deleteAccount();
-      // The account (and its session) is gone server-side; clear the local
-      // session too, then send them back to the landing page.
-      await createClient().auth.signOut();
-      router.push(afterDeleteHref);
-      router.refresh();
     } catch {
       setError("Something went wrong deleting your account. Please try again.");
       setDeleting(false);
+      return;
     }
+    // The account is gone server-side; best-effort clear the local session,
+    // then send them back to the landing page regardless of signOut outcome.
+    await createClient().auth.signOut().catch(() => {});
+    router.push(afterDeleteHref);
+    router.refresh();
   }
 
   return (
