@@ -56,6 +56,9 @@ export type DatePickerProps = {
   className?: string
   /** Merged onto the <Input> (e.g. a warning border). */
   inputClassName?: string
+  /** Earliest selectable date as "YYYY-MM-DD"; earlier days are disabled in
+   *  the calendar and rejected when typed. */
+  minDate?: string
 }
 
 export function DatePicker({
@@ -67,8 +70,10 @@ export function DatePicker({
   placeholder = "Pick a date",
   className,
   inputClassName,
+  minDate,
 }: DatePickerProps) {
   const date = parseISODate(value)
+  const min = parseISODate(minDate ?? "")
   const [open, setOpen] = React.useState(false)
   const [month, setMonth] = React.useState<Date | undefined>(date)
   // The visible text is buffered locally so typing isn't fought by the parent;
@@ -95,7 +100,7 @@ export function DatePicker({
             return
           }
           const parsed = new Date(next)
-          if (!Number.isNaN(parsed.getTime())) {
+          if (!Number.isNaN(parsed.getTime()) && !(min && parsed < min)) {
             onChange(toISODate(parsed))
             setMonth(parsed)
           }
@@ -137,6 +142,7 @@ export function DatePicker({
             onMonthChange={setMonth}
             captionLayout="dropdown"
             weekStartsOn={1}
+            disabled={min ? { before: min } : undefined}
             onSelect={(selected) => {
               onChange(toISODate(selected))
               setOpen(false)

@@ -277,7 +277,14 @@ export default function EventForm({
                 <DatePicker
                   id="start_date"
                   value={startParts.date}
-                  onChange={(date) => setStartParts((p) => ({ ...p, date }))}
+                  onChange={(date) => {
+                    setStartParts((p) => ({ ...p, date }));
+                    // An end before the new start can no longer be valid —
+                    // clear it rather than submit a rejected range.
+                    setEndParts((p) =>
+                      p.date && date && p.date < date ? { date: "", time: "" } : p,
+                    );
+                  }}
                   required
                 />
                 <Input
@@ -312,6 +319,7 @@ export default function EventForm({
                   value={endParts.date}
                   onChange={(date) => setEndParts((p) => ({ ...p, date }))}
                   disabled={isAllDay}
+                  minDate={startParts.date || undefined}
                   inputClassName={
                     !isAllDay && fromExtraction && !endParts.date ? "border-warm" : ""
                   }
@@ -325,6 +333,13 @@ export default function EventForm({
                     setEndParts((p) => ({ ...p, time: e.target.value }))
                   }
                   disabled={isAllDay}
+                  // Same-day events must end after they start (the API rejects
+                  // end_time <= start_time); the browser enforces min on submit.
+                  min={
+                    endParts.date && endParts.date === startParts.date
+                      ? startParts.time || undefined
+                      : undefined
+                  }
                   className="bg-surface"
                 />
               </div>
