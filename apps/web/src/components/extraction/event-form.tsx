@@ -132,6 +132,12 @@ function ActionItemCard({
         <input
           value={item.description}
           onChange={(e) => onChange({ description: e.target.value })}
+          required
+          // The API strips whitespace and rejects empty descriptions — block
+          // whitespace-only values `required` alone would let through.
+          pattern=".*\S.*"
+          title="Action item description cannot be empty"
+          aria-label="Action item description"
           placeholder="Return the signed consent form"
           className="min-w-0 flex-1 bg-transparent text-body font-medium text-ink placeholder:text-ink-mute/60 focus-visible:outline-none"
         />
@@ -195,15 +201,30 @@ export default function EventForm({
   const [actionItems, setActionItems] = useState<ActionItemInput[]>(
     initial?.action_items ?? [],
   );
+  const [endError, setEndError] = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const start_time = partsToIso(startParts.date, startParts.time, isAllDay) as string;
+    // An all-day event is single-day, so it carries no end timestamp.
+    const end_time = isAllDay ? null : partsToIso(endParts.date, endParts.time, false);
+    // The API and DB both require end_time strictly after start_time. The
+    // min/minDate attributes can't catch everything (a blank end time anchors
+    // to midnight; min is inclusive), so gate here before submitting.
+    if (end_time && new Date(end_time) <= new Date(start_time)) {
+      setEndError(
+        endParts.time
+          ? "The end must be after the start."
+          : "Add an end time after the start, or clear the end date.",
+      );
+      return;
+    }
+    setEndError(null);
     onSubmit({
       title,
       event_type: eventType,
-      start_time: partsToIso(startParts.date, startParts.time, isAllDay) as string,
-      // An all-day event is single-day, so it carries no end timestamp.
-      end_time: isAllDay ? null : partsToIso(endParts.date, endParts.time, false),
+      start_time,
+      end_time,
       is_all_day: isAllDay,
       location: location || null,
       description: description || null,
@@ -243,6 +264,10 @@ export default function EventForm({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
+              // The API strips whitespace and rejects empty titles — block
+              // whitespace-only values `required` alone would let through.
+              pattern=".*\S.*"
+              title="Title cannot be empty"
               maxLength={EVENT_FIELD_LIMITS.title}
               placeholder="Summer Bake Sale"
               className="flex h-11 w-full rounded-md border border-hairline bg-surface px-3.5 text-heading text-ink shadow-sm placeholder:text-ink-mute/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -276,6 +301,8 @@ export default function EventForm({
               <div className="grid grid-cols-[240px_minmax(0,120px)] gap-2">
                 <DatePicker
                   id="start_date"
+                  // The API rejects start_time before year 2000 as suspicious.
+                  minDate="2000-01-01"
                   value={startParts.date}
                   onChange={(date) => {
                     setStartParts((p) => ({ ...p, date }));
@@ -284,6 +311,7 @@ export default function EventForm({
                     setEndParts((p) =>
                       p.date && date && p.date < date ? { date: "", time: "" } : p,
                     );
+                    setEndError(null);
                   }}
                   required
                 />
@@ -292,9 +320,10 @@ export default function EventForm({
                   type="time"
                   aria-label="Start time"
                   value={startParts.time}
-                  onChange={(e) =>
-                    setStartParts((p) => ({ ...p, time: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setStartParts((p) => ({ ...p, time: e.target.value }));
+                    setEndError(null);
+                  }}
                   disabled={isAllDay}
                   className="bg-surface"
                 />
@@ -304,7 +333,10 @@ export default function EventForm({
             <label className="flex items-center gap-2 text-body text-ink">
               <Checkbox
                 checked={isAllDay}
-                onCheckedChange={(checked) => setIsAllDay(checked === true)}
+                onCheckedChange={(checked) => {
+                  setIsAllDay(checked === true);
+                  setEndError(null);
+                }}
                 className="bg-surface"
               />
               All day
@@ -317,7 +349,10 @@ export default function EventForm({
                 <DatePicker
                   id="end_date"
                   value={endParts.date}
-                  onChange={(date) => setEndParts((p) => ({ ...p, date }))}
+                  onChange={(date) => {
+                    setEndParts((p) => ({ ...p, date }));
+                    setEndError(null);
+                  }}
                   disabled={isAllDay}
                   minDate={startParts.date || undefined}
                   inputClassName={
@@ -329,9 +364,10 @@ export default function EventForm({
                   type="time"
                   aria-label="End time"
                   value={endParts.time}
-                  onChange={(e) =>
-                    setEndParts((p) => ({ ...p, time: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setEndParts((p) => ({ ...p, time: e.target.value }));
+                    setEndError(null);
+                  }}
                   disabled={isAllDay}
                   // Same-day events must end after they start (the API rejects
                   // end_time <= start_time); the browser enforces min on submit.
@@ -343,6 +379,12 @@ export default function EventForm({
                   className="bg-surface"
                 />
               </div>
+              {endError && (
+                <p role="alert" className="flex items-center gap-1.5 text-meta text-destructive">
+                  <span className="h-1 w-1 rounded-full bg-destructive" />
+                  {endError}
+                </p>
+              )}
               {!isAllDay && fromExtraction && !endParts.date && !endParts.time && (
                 <p className="flex items-center gap-1.5 text-meta text-warm">
                   <span className="h-1 w-1 rounded-full bg-warm" />
