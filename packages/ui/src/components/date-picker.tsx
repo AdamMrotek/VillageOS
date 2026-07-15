@@ -82,6 +82,15 @@ export function DatePicker({
   React.useEffect(() => {
     setText(formatDisplay(parseISODate(value)))
   }, [value])
+  // When the minimum moves forward (the parent bumped it, e.g. a later start
+  // date), a stale month would open the calendar on a fully disabled view —
+  // advance it to the minimum's month.
+  React.useEffect(() => {
+    const minDay = parseISODate(minDate ?? "")
+    if (!minDay) return
+    const minMonth = new Date(minDay.getFullYear(), minDay.getMonth(), 1)
+    setMonth((m) => (m && m < minMonth ? minDay : m))
+  }, [minDate])
 
   return (
     <div className={cn("relative flex", className)}>
@@ -99,8 +108,14 @@ export function DatePicker({
             onChange("")
             return
           }
-          const parsed = new Date(next)
-          if (!Number.isNaN(parsed.getTime()) && !(min && parsed < min)) {
+          // new Date("YYYY-MM-DD") means UTC midnight — the previous day in
+          // negative-offset zones — so ISO-shaped input is built from local
+          // parts instead. Friendly text ("1 June 2026") already parses local.
+          const typed = next.trim()
+          const parsed = /^\d{4}-\d{1,2}-\d{1,2}$/.test(typed)
+            ? parseISODate(typed)
+            : new Date(typed)
+          if (parsed && !Number.isNaN(parsed.getTime()) && !(min && parsed < min)) {
             onChange(toISODate(parsed))
             setMonth(parsed)
           }

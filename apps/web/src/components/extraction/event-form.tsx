@@ -201,11 +201,20 @@ export default function EventForm({
   const [actionItems, setActionItems] = useState<ActionItemInput[]>(
     initial?.action_items ?? [],
   );
+  const [startError, setStartError] = useState<string | null>(null);
   const [endError, setEndError] = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const start_time = partsToIso(startParts.date, startParts.time, isAllDay) as string;
+    const start_time = partsToIso(startParts.date, startParts.time, isAllDay);
+    // The DatePicker's `required` only guarantees non-empty *text* — typed
+    // text that never parsed leaves the canonical date empty, so the ISO
+    // conversion can still come back null here.
+    if (!start_time) {
+      setStartError("Pick a valid start date.");
+      return;
+    }
+    setStartError(null);
     // An all-day event is single-day, so it carries no end timestamp.
     const end_time = isAllDay ? null : partsToIso(endParts.date, endParts.time, false);
     // The API and DB both require end_time strictly after start_time. The
@@ -311,6 +320,7 @@ export default function EventForm({
                     setEndParts((p) =>
                       p.date && date && p.date < date ? { date: "", time: "" } : p,
                     );
+                    setStartError(null);
                     setEndError(null);
                   }}
                   required
@@ -328,6 +338,12 @@ export default function EventForm({
                   className="bg-surface"
                 />
               </div>
+              {startError && (
+                <p role="alert" className="flex items-center gap-1.5 text-meta text-destructive">
+                  <span className="h-1 w-1 rounded-full bg-destructive" />
+                  {startError}
+                </p>
+              )}
             </div>
 
             <label className="flex items-center gap-2 text-body text-ink">
@@ -369,13 +385,9 @@ export default function EventForm({
                     setEndError(null);
                   }}
                   disabled={isAllDay}
-                  // Same-day events must end after they start (the API rejects
-                  // end_time <= start_time); the browser enforces min on submit.
-                  min={
-                    endParts.date && endParts.date === startParts.date
-                      ? startParts.time || undefined
-                      : undefined
-                  }
+                  // No `min` here — a native constraint would block the submit
+                  // before handleSubmit can show the end-after-start error, and
+                  // the two paths would message the same mistake differently.
                   className="bg-surface"
                 />
               </div>
