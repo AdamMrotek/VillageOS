@@ -76,3 +76,59 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+  e2e:
+    name: E2E (Playwright + local Supabase)
+    runs-on: ubuntu-latest
+    # A hung Docker pull or web server must not burn hours of runner time.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.0.8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Pinned to the version the committed supabase/config.toml was written
+      # against (signing_keys_path support). Never run `supabase init` here —
+      # it would regenerate a default config without the signing key and the
+      # API's JWKS-only validation would 401 everything.
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
+
+      # Fresh stack: applies supabase/migrations + seed.sql, serves JWKS from
+      # the committed local-only signing key. All keys are the CLI's shared
+      # local defaults — no GitHub secrets involved.
+      - name: Start local Supabase stack
+        run: supabase start -x studio,imgproxy,edge-runtime,vector,logflare
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @repo/e2e exec playwright install --with-deps chromium
+
+      # CI=true makes playwright.config.ts build and serve the production web
+      # bundle (next build && next start) instead of the dev server.
+      - name: Run e2e tests
+        run: pnpm --filter @repo/e2e test
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 14

@@ -1,0 +1,14 @@
+[
+  {
+    "kty": "EC",
+    "kid": "4000e328-0a04-44cf-b82c-bb6884e216c0",
+    "use": "sig",
+    "key_ops": ["sign", "verify"],
+    "alg": "ES256",
+    "ext": true,
+    "d": "geWJKUnfRpIuFPk3bpbUrGme2eRVKmWamwnMe72MAH8",
+    "crv": "P-256",
+    "x": "W7rTMJbYXJmc-ShbcNvbogiuiskE7M12o0heB6F9eak",
+    "y": "881SPNtRypUjUsrmBjJ0w05nv16Vq8KXfzJT2aNE7Og"
+  }
+]
