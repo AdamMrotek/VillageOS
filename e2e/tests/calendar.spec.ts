@@ -48,14 +48,18 @@ test.beforeEach(async ({ request }) => {
       },
     },
   );
+  expect(auth).toBeOK();
   const { access_token } = await auth.json();
   const headers = { Authorization: `Bearer ${access_token}` };
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  const events = await (await request.get(`${apiUrl}/api/events`, { headers })).json();
+  const eventsResponse = await request.get(`${apiUrl}/api/events`, { headers });
+  expect(eventsResponse).toBeOK();
+  const events = await eventsResponse.json();
   for (const event of events) {
     if (event.title === DRAFT.title) {
-      await request.delete(`${apiUrl}/api/events/${event.id}`, { headers });
+      const deletion = await request.delete(`${apiUrl}/api/events/${event.id}`, { headers });
+      expect(deletion).toBeOK();
     }
   }
 });

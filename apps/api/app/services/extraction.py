@@ -16,6 +16,7 @@ public surface (used by the extract router and the eval harness).
 """
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -367,8 +368,16 @@ async def extract_event(
     resolved_provider = (provider or get_settings().llm_provider).lower()
 
     # E2E seam: LLM_PROVIDER=fake short-circuits to canned fixtures — no
-    # instructor client, no network, no key. Test environments only.
+    # instructor client, no network, no key. Double-gated: the fake branch also
+    # requires E2E_FAKE_LLM=1, which only the test harness / CI e2e job sets, so
+    # a stray LLM_PROVIDER=fake in a real environment fails loudly instead of
+    # silently serving fixtures to users.
     if resolved_provider == "fake":
+        if os.getenv("E2E_FAKE_LLM") != "1":
+            raise ValueError(
+                "LLM_PROVIDER=fake requires E2E_FAKE_LLM=1 (test/e2e runs only); "
+                "refusing to serve canned fixtures outside a test environment"
+            )
         response = ExtractResponse(
             event=fake_extract_event(raw_text), model_used="fake", tokens_used=0
         )

@@ -91,6 +91,9 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       env: {
         LLM_PROVIDER: "fake",
+        // Second gate the API requires before serving canned fixtures — proves
+        // this is a test run, not a stray prod misconfig (see extraction.py).
+        E2E_FAKE_LLM: "1",
         SUPABASE_URL: process.env.SUPABASE_URL!,
         SUPABASE_PUBLISHABLE_KEY: process.env.SUPABASE_PUBLISHABLE_KEY!,
         SUPABASE_SECRET_KEY: localSecretKey(),

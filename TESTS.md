@@ -118,10 +118,17 @@ endpoint and still be wide open. Postgres/PostgREST also expose every RLS-off
 table directly over HTTP, independent of our FastAPI routes — so RLS, not the
 endpoint, is the real boundary.
 
+**What they prove — and don't.** Together the two guards prove routes use the
+JWT-scoped client *and* that RLS is **enabled** on every public table. They do
+**not** prove a policy is *correct* — a table with RLS on but a too-broad
+`USING (true)` policy would still pass. Policy correctness (that
+`auth.uid() = user_id` actually filters rows) is checked by manual/exploratory
+testing, not automated here; a policy-level assertion is open follow-up.
+
 **Why not a browser cross-user pen test.** A per-table E2E ("user B can't delete
 user A's event") only exercises the tables it names; it catches a regression on
-`events` but is blind to a future table with RLS off — the actual risk. The two
-guards above cover that failure mode at a fraction of the cost, without a
+`events` but is blind to a future table with RLS off — the failure mode that
+scales. The two guards above close that at a fraction of the cost, without a
 browser. See [ADR-024](ADL.md#adr-024--full-stack-e2e-with-playwright-against-a-local-supabase-stack).
 
 > `usage_counters` has **RLS on but no user policy** by design

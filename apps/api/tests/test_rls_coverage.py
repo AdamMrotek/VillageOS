@@ -34,20 +34,16 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "supabase" / "migrations"
 # unless there is a documented reason; every entry weakens the guarantee.
 RLS_EXEMPT: set[str] = set()
 
-# `CREATE TABLE [IF NOT EXISTS] [public.]"?name"?`
-_CREATE_RE = re.compile(
-    r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?',
-    re.IGNORECASE,
-)
-# `DROP TABLE [IF EXISTS] [public.]"?name"?` — so a create-then-drop isn't flagged.
-_DROP_RE = re.compile(
-    r'DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?',
-    re.IGNORECASE,
-)
-# `ALTER TABLE [ONLY] [public.]"?name"? ... ENABLE ROW LEVEL SECURITY`
+# A table reference: an optional (quoted) schema qualifier plus the name. Only
+# unqualified names or an explicit `public.` schema are treated as public;
+# `auth.users`, `storage.objects`, etc. are ignored so non-public DDL neither
+# false-fails the guard nor is mistaken for a public table.
+_TABLE = r'(?:"?(?P<schema>[a-zA-Z_][a-zA-Z0-9_]*)"?\s*\.\s*)?"?(?P<name>[a-zA-Z_][a-zA-Z0-9_]*)"?'
+
+_CREATE_RE = re.compile(rf"^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{_TABLE}", re.IGNORECASE)
+_DROP_RE = re.compile(rf"^\s*DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?{_TABLE}", re.IGNORECASE)
 _ENABLE_RE = re.compile(
-    r'ALTER\s+TABLE\s+(?:ONLY\s+)?(?:public\.)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?'
-    r"\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
+    rf"^\s*ALTER\s+TABLE\s+(?:ONLY\s+)?{_TABLE}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
     re.IGNORECASE,
 )
 
@@ -60,17 +56,45 @@ def _strip_comments(sql: str) -> str:
     return _LINE_COMMENT_RE.sub("", _BLOCK_COMMENT_RE.sub("", sql))
 
 
-def _scan_migrations() -> tuple[set[str], set[str]]:
-    """Return (created_public_tables, rls_enabled_tables) across all migrations."""
-    created: set[str] = set()
-    dropped: set[str] = set()
-    enabled: set[str] = set()
+def _public_table(match: re.Match[str]) -> str | None:
+    """The public-schema table name a statement targets, or None for other schemas."""
+    schema = match.group("schema")
+    if schema is not None and schema.lower() != "public":
+        return None
+    return match.group("name")
+
+
+def _statements() -> list[str]:
+    """All migration statements in apply order (files sorted, then in-file order).
+
+    Splitting on `;` can fragment a function/DO body, but no fragment matches
+    CREATE/DROP/ALTER-ENABLE for a *table*, so the DDL we track is unaffected.
+    """
+    stmts: list[str] = []
     for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-        sql = _strip_comments(path.read_text())
-        created.update(_CREATE_RE.findall(sql))
-        dropped.update(_DROP_RE.findall(sql))
-        enabled.update(_ENABLE_RE.findall(sql))
-    return created - dropped, enabled
+        stmts.extend(_strip_comments(path.read_text()).split(";"))
+    return stmts
+
+
+def _final_rls_state() -> dict[str, bool]:
+    """Map each currently-active public table to whether RLS ends up enabled.
+
+    Applied in migration order so a table's *final* state wins: create resets
+    RLS to off, drop removes it entirely, enable turns it on — so a
+    create → enable → drop → recreate sequence correctly ends up unprotected.
+    """
+    state: dict[str, bool] = {}
+    for stmt in _statements():
+        if m := _CREATE_RE.match(stmt):
+            if (name := _public_table(m)) is not None:
+                state[name] = False  # (re)create starts with RLS off
+        elif m := _DROP_RE.match(stmt):
+            if (name := _public_table(m)) is not None:
+                state.pop(name, None)
+        elif m := _ENABLE_RE.match(stmt):
+            if (name := _public_table(m)) is not None and name in state:
+                state[name] = True
+    return state
 
 
 class TestRlsCoverage:
@@ -81,8 +105,8 @@ class TestRlsCoverage:
         assert list(MIGRATIONS_DIR.glob("*.sql")), "no migration files found"
 
     def test_every_public_table_has_rls_enabled(self):
-        created, enabled = _scan_migrations()
-        unprotected = created - enabled - RLS_EXEMPT
+        unprotected = {t for t, enabled in _final_rls_state().items() if not enabled}
+        unprotected -= RLS_EXEMPT
         assert not unprotected, (
             f"public tables created without ENABLE ROW LEVEL SECURITY: {sorted(unprotected)}. "
             "Every user-facing table must enable RLS (ADR-010) — without it the table is "
@@ -95,6 +119,6 @@ class TestRlsCoverage:
         # Keep RLS_EXEMPT honest: an entry for a table that no longer exists (or
         # that has since had RLS enabled) must be pruned so it can't mask a
         # future reintroduction.
-        created, enabled = _scan_migrations()
-        stale = {t for t in RLS_EXEMPT if t not in created or t in enabled}
+        state = _final_rls_state()
+        stale = {t for t in RLS_EXEMPT if t not in state or state[t]}
         assert not stale, f"RLS_EXEMPT entries no longer need an exemption: {sorted(stale)}"
