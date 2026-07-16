@@ -10,18 +10,22 @@
   },
   "scripts": {},
   "devDependencies": {
+    "@tanstack/react-query": "^5.100.9",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "next": "16.2.4",
     "typescript": "^5"
   },
   "peerDependencies": {
+    "@tanstack/react-query": "^5",
     "next": "^16",
     "react": "^19",
     "react-dom": "^19"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.2",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import SignInForm from "@/components/sign-in-form";
+import SignInForm from "@repo/ui/custom_components/sign-in-form";
 import TryDemoButton from "@/components/try-demo-button";
 
 export default function LandingPage() {
@@ -37,7 +37,12 @@ export default function LandingPage() {
 
       {/* Right — sign in for returning families */}
       <section className="flex flex-col justify-center border-t border-hairline bg-surface px-8 py-16 md:w-[440px] md:border-l md:border-t-0 md:px-12 lg:px-16">
-        <SignInForm />
+        <SignInForm
+          redirectTo="/calendar"
+          signUpHref="/sign-up"
+          forgotPasswordHref="/forgot-password"
+          showGoogle
+        />
       </section>
     </main>
   );

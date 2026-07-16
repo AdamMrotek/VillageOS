@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "../lib/supabase";
 
 /**
  * "Continue with Google" button.
@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
  * Consent isn't collected here — a first-time user is sent to the `/consent`
  * gate after login by the proxy (see proxy.ts / app/consent), so the button
  * stays a single click for everyone. Reusable on any page via the `next` prop.
+ * The host app must serve the `/auth/callback` OAuth exchange route.
  */
 export default function GoogleSignInButton({
   next = "/calendar",

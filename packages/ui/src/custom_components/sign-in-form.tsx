@@ -3,10 +3,30 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
-import GoogleSignInButton from "@/components/google-sign-in-button";
+import { createClient } from "../lib/supabase";
+import GoogleSignInButton from "./google-sign-in-button";
 
-export default function SignInForm() {
+/** Email + password sign-in, shared by web and admin. Routes are injected by
+ *  the host app: web passes its sign-up / forgot-password pages and enables
+ *  Google; admin renders the bare form with none of them. */
+export default function SignInForm({
+  redirectTo,
+  signUpHref,
+  forgotPasswordHref,
+  showGoogle = false,
+  showHeading = true,
+}: {
+  /** Where to navigate after a successful sign-in. */
+  redirectTo: string;
+  /** Sign-up page; omit to hide the "Don't have an account?" line. */
+  signUpHref?: string;
+  /** Forgot-password page; omit to hide the link. */
+  forgotPasswordHref?: string;
+  /** Show "Continue with Google" — the host app must serve /auth/callback. */
+  showGoogle?: boolean;
+  /** Hide the built-in "Sign in" heading when the host provides its own. */
+  showHeading?: boolean;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,27 +47,35 @@ export default function SignInForm() {
       // that property but make the copy friendlier and point to sign-up.
       setError(
         error.message === "Invalid login credentials"
-          ? "Wrong email or password. No account yet? Sign up below."
+          ? signUpHref
+            ? "Wrong email or password. No account yet? Sign up below."
+            : "Wrong email or password."
           : error.message,
       );
       setLoading(false);
     } else {
-      router.push("/calendar");
+      router.push(redirectTo);
       router.refresh();
     }
   }
 
   return (
     <div className="w-full max-w-sm space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
-        <p className="text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <Link href="/sign-up" className="underline underline-offset-4">
-            Sign up
-          </Link>
-        </p>
-      </div>
+      {(showHeading || signUpHref) && (
+        <div className="space-y-1">
+          {showHeading && (
+            <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+          )}
+          {signUpHref && (
+            <p className="text-sm text-muted-foreground">
+              Don&apos;t have an account?{" "}
+              <Link href={signUpHref} className="underline underline-offset-4">
+                Sign up
+              </Link>
+            </p>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1">
@@ -90,20 +118,29 @@ export default function SignInForm() {
           {loading ? "Signing in…" : "Sign in"}
         </button>
 
-        <p className="text-sm text-muted-foreground text-center">
-          <Link href="/forgot-password" className="underline underline-offset-4">
-            Forgot password?
-          </Link>
-        </p>
+        {forgotPasswordHref && (
+          <p className="text-sm text-muted-foreground text-center">
+            <Link
+              href={forgotPasswordHref}
+              className="underline underline-offset-4"
+            >
+              Forgot password?
+            </Link>
+          </p>
+        )}
       </form>
 
-      <div className="flex items-center gap-3">
-        <span className="h-px flex-1 bg-border" />
-        <span className="text-xs text-muted-foreground">or</span>
-        <span className="h-px flex-1 bg-border" />
-      </div>
+      {showGoogle && (
+        <>
+          <div className="flex items-center gap-3">
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">or</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
 
-      <GoogleSignInButton />
+          <GoogleSignInButton next={redirectTo} />
+        </>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@repo/ui/lib/supabase";
 import { authedFetch } from "@/lib/api-fetch";
 
 export async function apiClient<T>(path: string, init?: RequestInit): Promise<T> {

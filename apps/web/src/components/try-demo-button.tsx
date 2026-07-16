@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@repo/ui/lib/supabase";
 import { seedDemo } from "@/lib/api-client";
 
 export default function TryDemoButton() {

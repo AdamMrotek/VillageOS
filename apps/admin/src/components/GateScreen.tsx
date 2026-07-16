@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@repo/ui/components/button";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@repo/ui/lib/supabase";
 
 /** Full-height loading / not-authorised / error screens shared by the admin
  *  pages. Render this for any non-"ready" Resource state. */

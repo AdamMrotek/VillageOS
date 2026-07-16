@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { authUserQuery } from "@/lib/hooks/use-auth-user";
+import { authUserQuery } from "@repo/ui/hooks/use-auth-user";
 
 /** True when the current session is a demo account — Supabase anonymous
  *  users (created by "Try the demo") carry `is_anonymous=true`. Drives the

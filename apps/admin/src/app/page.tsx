@@ -19,7 +19,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Button } from "@repo/ui/components/button";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@repo/ui/lib/supabase";
 import {
   ApiError,
   NotAuthenticated,
@@ -264,14 +264,7 @@ export default function DashboardPage() {
           Extraction A/B — live charts
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          control = OpenAI stack · treatment = Groq / Llama-4 Scout ·{" "}
-          <Button
-            variant="link"
-            onClick={signOut}
-            className="h-auto p-0 align-baseline text-sm"
-          >
-            sign out
-          </Button>
+          control = OpenAI stack · treatment = Groq / Llama-4 Scout
         </p>
       </header>
 

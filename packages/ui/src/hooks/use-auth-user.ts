@@ -7,7 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type { User } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "../lib/supabase";
 
 export type AppRole = "parent" | "provider" | "admin";
 
