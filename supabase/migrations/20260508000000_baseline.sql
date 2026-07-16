@@ -1,9 +1,17 @@
 -- Baseline: reflects the schema created by the POC migration (20260508160143).
 -- This file is a record only — these tables already exist on the remote.
 
-CREATE TYPE IF NOT EXISTS public.event_type AS ENUM (
-    'school', 'sport', 'birthday', 'fundraiser', 'meeting', 'deadline', 'other'
-);
+-- Postgres has no CREATE TYPE IF NOT EXISTS; the DO block gives the same
+-- idempotency (required now that the local e2e stack replays this file).
+DO $$
+BEGIN
+    CREATE TYPE public.event_type AS ENUM (
+        'school', 'sport', 'birthday', 'fundraiser', 'meeting', 'deadline', 'other'
+    );
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS events (
     id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
