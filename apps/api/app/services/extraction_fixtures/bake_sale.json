@@ -1,0 +1,24 @@
+{
+  "trigger": "bake sale",
+  "event": {
+    "title": "Summer Bake Sale",
+    "event_type": "fundraiser",
+    "start_time": "2026-09-18T15:00:00",
+    "end_time": "2026-09-18T17:00:00",
+    "is_all_day": false,
+    "location": "School hall, Oakwood Primary",
+    "description": "PTA summer bake sale. Cake donations welcome on the day.",
+    "action_items": [
+      {
+        "description": "Bring £2 in a labelled envelope",
+        "cost_estimate_gbp": 2,
+        "urgent": false
+      },
+      {
+        "description": "Drop cake donations at the school office",
+        "urgent": true
+      }
+    ],
+    "confidence": 0.95
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "trigger": "museum",
+  "event": {
+    "title": "Year 3 Museum Trip",
+    "event_type": "school",
+    "start_time": "2026-09-15T08:45:00",
+    "end_time": null,
+    "is_all_day": false,
+    "location": "Natural History Museum",
+    "description": "Coach leaves at 8:45am sharp.",
+    "action_items": [
+      {
+        "description": "Return the signed consent form",
+        "urgent": true
+      },
+      {
+        "description": "Pay £12 for the coach",
+        "cost_estimate_gbp": 12,
+        "urgent": false
+      }
+    ],
+    "confidence": 0.9
+  }
+}
