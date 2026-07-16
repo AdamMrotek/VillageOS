@@ -3,8 +3,9 @@ import { defineConfig, devices } from "@playwright/test";
 import dotenv from "dotenv";
 
 // Local-stack URLs, keys, and seeded-user credentials. Committed — everything
-// in it is local-only (see .env.e2e).
-dotenv.config({ path: path.resolve(__dirname, ".env.e2e") });
+// in it is local-only (see .env.e2e). `override` so a hosted-project value
+// exported in the shell can never shadow the local-stack values.
+dotenv.config({ path: path.resolve(__dirname, ".env.e2e"), override: true });
 
 /** Dedicated port so the e2e web server (wired to the LOCAL Supabase stack)
  *  can never be confused with a normal `pnpm dev` on :3000 that points at the
