@@ -204,9 +204,10 @@ SUPABASE_SECRET_KEY=sb_secret_...
 
 ## ADR-012 — GitHub Actions CI with ruff for the Python API
 
-**Decision:** A single `.github/workflows/ci.yml` runs on every push to `main` and every PR, with two parallel jobs:
-- **Web** (`pnpm -F @repo/web lint` → `tsc --noEmit` → `pnpm build`) covering `apps/web` + `apps/admin` via Turborepo.
-- **API** (`ruff check .` → `ruff format --check .` → `pytest`) covering `apps/api`.
+**Decision:** A single `.github/workflows/ci.yml` runs on every push to `main` and every PR, with parallel jobs:
+- **Web** (`pnpm -F @repo/web lint` → `tsc --noEmit` → `pnpm -F @repo/web test` (vitest) → `pnpm build`) covering `apps/web` + `apps/admin` via Turborepo.
+- **API** (`ruff check .` → `ruff format --check .` → `mypy` → `pytest`) covering `apps/api`.
+- **E2E** (Playwright against a local Supabase stack) added later by **ADR-024**.
 
 Eval runs against real LLM providers are deliberately kept *out* of CI for now; when wired up they will live in a separate manual-only `evals.yml` (`workflow_dispatch`).
 
@@ -461,5 +462,40 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 **Note on ADR-021:** the "cookieless PostHog analytics" point no longer applies — analytics is first-party in our own database, so PECR is engaged even less than before. Lawful basis and the consent record are unchanged.
 
 **See also:** [apps/api/EXPERIMENTS.md](apps/api/EXPERIMENTS.md)
+
+---
+
+## ADR-024 — Full-stack E2E with Playwright against a local Supabase stack
+
+**Decision:** Add an E2E layer that drives a real browser through the *real* system — Next.js → FastAPI → Postgres, with real Supabase JWT auth and RLS in the loop. The only thing faked is the LLM (`LLM_PROVIDER=fake`, canned fixtures), because it is the one paid, non-deterministic, external dependency. The environment is the **Supabase CLI local stack** (`supabase start`), booted per run, seeded and reset from `supabase/seed.sql`. Tests live in an `e2e/` pnpm workspace member (`@repo/e2e`); a third CI job runs them in parallel with Web and API (**extends ADR-012**). Full working reference: [E2e_test_strategy.md](E2e_test_strategy.md) and [TESTS.md](TESTS.md).
+
+**Reasons:**
+- **Mock only at the boundary of what we own.** Everything ours (web, API, DB, auth) is exercised for real, so the classic split-brain failure — frontend and backend each green on their own suites but disagreeing on a header, cookie, field name, or the auth handshake — is actually caught. Faking the network (MSW / `page.route()`) would prove only that the frontend renders against responses we invented.
+- **The local stack made the rigorous variant cheap.** Full-stack E2E used to mean fragile shared staging or heavy Docker orchestration, which is why network-mocked "e2e" became common. `supabase start` gives a disposable, seedable Postgres + GoTrue in one command, identical on laptop and CI, collapsing that cost.
+- **Zero secrets, deterministic.** The stack uses the CLI's shared local default keys plus a committed **local-only** ES256 signing key (see below); `.env.e2e` is identical everywhere and safe to commit. No GitHub secrets, no hosted project, no external calls. Every run gets a fresh stack, so parallel PRs never share state.
+- **`storageState`, not login-per-test.** One setup project logs in through the UI once and saves the session; every other spec reuses it. Exactly one spec drives the login form itself.
+- **Committed asymmetric signing key is a hard requirement, not a convenience.** `apps/api/app/core/auth.py` validates JWTs via JWKS with **RS256/ES256 only** (ADR-006/ADR-010) — there is no HS256 path. The local stack's default legacy HS256 secret would 401 every authed call, so the stack must serve an asymmetric key. `supabase gen signing-key` + `signing_keys_path` in `config.toml`, committed; it only works against a `127.0.0.1` stack.
+- **Dedicated ports 3100 (web) / 8100 (api).** A normal `pnpm dev` / `make backend` points at the *hosted* project and a real LLM; separate ports mean Playwright's `reuseExistingServer` can only ever attach to the fake-provider, local-stack servers, never leak a developer's hosted values into a run.
+
+**Deliberate scope — what E2E does *not* cover, and why:**
+- **No browser-driven cross-user "pen test" suite.** A per-table test ("user B cannot delete user A's event") only exercises the tables it names; it catches a *regression* on `events` but is structurally blind to a *future* table shipped with RLS off. It is also redundant with the structural guards below for the failure mode that actually scales.
+- **What the two guards below do and don't prove.** Together they prove (a) user routes use the JWT-scoped client and (b) RLS is *enabled* on every public table. They do **not** prove the *policy* is correct — a table could have RLS on with a too-broad `USING (true)` policy and still pass. Policy correctness (the `auth.uid() = user_id` predicate actually filtering rows) is verified by manual/exploratory testing, not automated here; adding a policy-level assertion is open follow-up. The guards close the high-frequency mistake (a table with no RLS at all), not every ownership bug.
+- **Row ownership is guarded at two cheaper layers:**
+  1. `apps/api/tests/test_db_boundary.py` — an AST architectural test asserting user-data routes inject the JWT-scoped client (`get_user_db`) and only allowlisted scopes touch the RLS-bypassing service-role client. Covers the *endpoint → client-choice* boundary.
+  2. `apps/api/tests/test_rls_coverage.py` — a structural guard asserting **every `public` table has RLS enabled.** It parses the migration set (the schema's source of truth) and fails if any `CREATE TABLE` lacks a matching `ENABLE ROW LEVEL SECURITY` anywhere across the migrations. Static-over-migrations (not a live catalog query) so it runs as a real gate in the API pytest job with no DB and no extra dependency — same philosophy as `test_db_boundary.py`. A future table shipped without RLS fails CI the moment it lands, no test edit. This covers the *table → RLS-enabled* property, which the endpoint test architecturally cannot see: `get_user_db` is only safe *because* RLS is on, and Postgres/PostgREST expose every RLS-off table directly over HTTP regardless of our routes.
+  - Note: `usage_counters` has **RLS on but no user policy** (ADR-017) — the *most* locked-down state (server-only), so it passes an "RLS enabled" check without an exception.
+
+**Tradeoffs:**
+- **Slowest job in CI (~5–8 min).** Dominated by `supabase start` pulling Docker images fresh on each ephemeral runner (no warm daemon). Mitigated by pinning the CLI version, `-x`-skipping unneeded services, and caching Playwright browsers. Runs in parallel, so it sets the gate's wall time rather than adding to it. `timeout-minutes: 20` caps a hung stack.
+- **Local Docker required.** Satisfied on `ubuntu-latest` and dev laptops; only a concern if CI ever moves to a Docker-less runner.
+- **Fixture drift.** The fake provider returns canned extractions, so a real prompt/schema change can pass E2E while degrading live quality — that signal stays owned by the eval suite (ADR-012), not E2E.
+- **Next 16 single-dev-server lock.** Two dev servers can't share one `.next`, so a running `make frontend` must be stopped before a local run; `make e2e` clears the ports first.
+
+**Impact:**
+- `e2e/` — `@repo/e2e` workspace: `playwright.config.ts` (setup → chromium projects, web `webServer` on :3100 + api on :8100, production build under `CI=true`), `.env.e2e` (committed local-only values), `tests/auth.setup.ts` + `auth.spec.ts` + `calendar.spec.ts`.
+- `supabase/config.toml`, `supabase/signing_keys.json` (committed local-only ES256 key), `supabase/seed.sql` (pre-confirmed, pre-consented `e2e-a` / `e2e-b`).
+- `.github/workflows/ci.yml` — third `e2e` job (pinned Supabase CLI, fresh stack, browser cache, report uploaded on failure).
+- `Makefile` — `make e2e` / `e2e-headed` / `e2e-report`.
+- Canonical references: [E2e_test_strategy.md](E2e_test_strategy.md) (working plan + roadmap) and [TESTS.md](TESTS.md) (test-layer overview).
 
 ---

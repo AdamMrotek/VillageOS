@@ -25,14 +25,14 @@ eval:
 e2e:
 	@supabase status >/dev/null 2>&1 || supabase start -x studio,imgproxy,edge-runtime,vector,logflare
 	@supabase db reset
-	-@lsof -ti :3000,3100 | xargs kill 2>/dev/null || true
+	-@lsof -ti :3000,3100,8100 | xargs kill 2>/dev/null || true
 	pnpm --filter @repo/e2e test
 
 # Same, but with visible browser windows for debugging.
 e2e-headed:
 	@supabase status >/dev/null 2>&1 || supabase start -x studio,imgproxy,edge-runtime,vector,logflare
 	@supabase db reset
-	-@lsof -ti :3000,3100 | xargs kill 2>/dev/null || true
+	-@lsof -ti :3000,3100,8100 | xargs kill 2>/dev/null || true
 	pnpm --filter @repo/e2e exec playwright test --headed
 
 # Open the HTML report from the last run.

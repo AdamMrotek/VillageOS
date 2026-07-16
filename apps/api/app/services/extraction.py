@@ -16,6 +16,7 @@ public surface (used by the extract router and the eval harness).
 """
 
 import logging
+import os
 import time
 from dataclasses import dataclass
 from datetime import date
@@ -34,6 +35,7 @@ from app.prompts.extraction import VISION_VERSION, get_prompt
 from app.schemas.events import ExtractResponse, ParentEvent
 from app.schemas.extraction_draft import ParentEventDraft
 from app.services.extraction_date import build_date_table, draft_to_event
+from app.services.extraction_fake import fake_extract_event
 
 logger = logging.getLogger("villageos.extraction")
 
@@ -364,6 +366,38 @@ async def extract_event(
     #    answer for itself.
     pinned = provider is not None or model is not None
     resolved_provider = (provider or get_settings().llm_provider).lower()
+
+    # E2E seam: LLM_PROVIDER=fake short-circuits to canned fixtures — no
+    # instructor client, no network, no key. Double-gated: the fake branch also
+    # requires E2E_FAKE_LLM=1, which only the test harness / CI e2e job sets, so
+    # a stray LLM_PROVIDER=fake in a real environment fails loudly instead of
+    # silently serving fixtures to users.
+    if resolved_provider == "fake":
+        if os.getenv("E2E_FAKE_LLM") != "1":
+            raise ValueError(
+                "LLM_PROVIDER=fake requires E2E_FAKE_LLM=1 (test/e2e runs only); "
+                "refusing to serve canned fixtures outside a test environment"
+            )
+        response = ExtractResponse(
+            event=fake_extract_event(raw_text), model_used="fake", tokens_used=0
+        )
+        if return_details:
+            input_type, image_bytes = _describe_input(raw_text, image_data_url)
+            return response, ExtractionRunDetails(
+                provider="fake",
+                model="fake",
+                prompt_version=version,
+                mode="FAKE",
+                tokens_used=0,
+                prompt_tokens=0,
+                completion_tokens=0,
+                llm_duration_ms=0.0,
+                input_length_chars=len(raw_text or ""),
+                input_type=input_type,
+                image_bytes=image_bytes,
+            )
+        return response
+
     if resolved_provider not in _PROVIDERS:
         raise ValueError(f"Unsupported LLM provider: {resolved_provider}")
     cfg = _PROVIDERS[resolved_provider]
