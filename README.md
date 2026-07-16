@@ -9,7 +9,7 @@
 [![Live API](https://img.shields.io/badge/api-AWS%20Lambda-FF9900?logo=awslambda&logoColor=white)](https://eep5cd3mp0.execute-api.eu-north-1.amazonaws.com/docs)
 [![ADRs](https://img.shields.io/badge/architecture-14%20ADRs-blue)](./ADL.md)
 
-**Live demo:** https://villageos.co.uk/sign-in
+**Live demo:** https://villageos.co.uk
 **Live API:** https://eep5cd3mp0.execute-api.eu-north-1.amazonaws.com/docs (Swagger)
 
 ## Screenshots & demo
