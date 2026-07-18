@@ -77,11 +77,13 @@ _PROVIDERS: dict[str, ProviderConfig] = {
     "groq": ProviderConfig(
         base_url="https://api.groq.com/openai/v1",
         api_key_env="GROQ_API_KEY",
-        # Scout passes the eval reliably in JSON mode and is ~5x cheaper than
-        # 70b. Escalation disabled (smart_model = fast_model) because 70b's
-        # date-disambiguation bug is independent of confidence.
-        fast_model="meta-llama/llama-4-scout-17b-16e-instruct",
-        smart_model="meta-llama/llama-4-scout-17b-16e-instruct",
+        # Scout was removed from Groq (deprecated 2026-06-17); qwen3.6-27b is
+        # Groq's recommended replacement and the strongest of the survivors on
+        # the golden vision set (grader ~9/10). Escalation disabled
+        # (smart_model = fast_model): the survey showed no confidence-linked
+        # failure mode that a larger model would fix.
+        fast_model="qwen/qwen3.6-27b",
+        smart_model="qwen/qwen3.6-27b",
         mode="JSON",
     ),
     "openai": ProviderConfig(
@@ -91,6 +93,30 @@ _PROVIDERS: dict[str, ProviderConfig] = {
         smart_model="gpt-4o",
         vision_model="gpt-4o",
         mode="TOOLS",
+    ),
+    # Gemini exposes an OpenAI-compatible endpoint, so it rides the same
+    # instructor/AsyncOpenAI path as the others. JSON mode (not TOOLS) because
+    # the compat layer's structured output is most reliable that way, matching
+    # how Groq is configured. Scout-replacement survey candidate (2026-07-18).
+    "google": ProviderConfig(
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        api_key_env="GEMINI_API_KEY",
+        # 3.1-flash-lite is GA and durable; the 2.5 line shuts down 2026-10-16.
+        fast_model="gemini-3.1-flash-lite",
+        smart_model="gemini-3.5-flash",
+        vision_model="gemini-3.1-flash-lite",
+        mode="JSON",
+    ),
+    # OpenRouter aggregator (OpenAI-compatible). Used to trial free vision
+    # models the other providers dropped — e.g. gemma-4 with :free routing.
+    # Scout-replacement survey candidate (2026-07-18).
+    "openrouter": ProviderConfig(
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY",
+        fast_model="google/gemma-4-26b-a4b-it:free",
+        smart_model="google/gemma-4-26b-a4b-it:free",
+        vision_model="google/gemma-4-26b-a4b-it:free",
+        mode="JSON",
     ),
 }
 

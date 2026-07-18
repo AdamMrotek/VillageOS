@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     instructor_mode: str | None = None
     openai_api_key: str | None = None
     groq_api_key: str | None = None
+    gemini_api_key: str | None = None
+    openrouter_api_key: str | None = None
 
     # Provider-cover uploads (S3 presigned POST → CloudFront)
     aws_region: str = "eu-north-1"

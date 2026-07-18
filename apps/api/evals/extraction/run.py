@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import io
 import itertools
 import json
 import os
@@ -57,7 +58,12 @@ START_TIME_TOLERANCE = timedelta(minutes=30)
 TOLERANCE_MIN = int(START_TIME_TOLERANCE.total_seconds() // 60)
 
 # Env var that gates each provider. Combos whose key is unset are skipped.
-PROVIDER_ENV = {"openai": "OPENAI_API_KEY", "groq": "GROQ_API_KEY"}
+PROVIDER_ENV = {
+    "openai": "OPENAI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "google": "GEMINI_API_KEY",
+    "openrouter": "OPENROUTER_API_KEY",
+}
 
 # USD per 1M tokens. Update as provider pricing changes — these drive the cost
 # column in the report. Unknown combos fall back to (0, 0) and print "n/a".
@@ -72,6 +78,20 @@ PRICING_USD_PER_M: dict[tuple[str, str], tuple[float, float]] = {
     ("groq", "openai/gpt-oss-20b"): (0.10, 0.50),
     ("groq", "openai/gpt-oss-120b"): (0.15, 0.75),
     ("groq", "qwen/qwen3-32b"): (0.29, 0.59),
+    # Scout-replacement survey (2026-07-18). Groq qwen3.6-27b price is an
+    # estimate — verify against https://groq.com/pricing before quoting.
+    ("groq", "qwen/qwen3.6-27b"): (0.20, 0.60),
+    ("openai", "gpt-4.1-mini"): (0.40, 1.60),
+    ("openai", "gpt-5-mini"): (0.25, 2.00),
+    # Google Gemini vision candidates. Prices verified against
+    # https://ai.google.dev/gemini-api/docs/pricing on 2026-07-18.
+    # gemini-2.5-flash-lite is the cheapest but shuts down 2026-10-16;
+    # gemini-3.1-flash-lite is the GA, durable Scout-class pick.
+    ("google", "gemini-2.5-flash-lite"): (0.10, 0.40),
+    ("google", "gemini-3.1-flash-lite"): (0.25, 1.50),
+    ("google", "gemini-3-flash-preview"): (0.50, 3.00),
+    # OpenRouter free tier — $0 tokens (subject to daily/per-minute rate limits).
+    ("openrouter", "google/gemma-4-26b-a4b-it:free"): (0.0, 0.0),
 }
 
 DEFAULT_MATRIX: list[tuple[str, str]] = [
@@ -89,6 +109,17 @@ VISION_CAPABLE: set[tuple[str, str]] = {
     # Llama-4 Scout is natively multimodal; Groq accepts OpenAI-style
     # image_url content parts under JSON mode (their docs, 2026-06).
     ("groq", "meta-llama/llama-4-scout-17b-16e-instruct"),
+    # Scout-replacement candidates (2026-07-18). qwen3.6-27b is now the only
+    # vision model on Groq; gpt-4.1-mini / gpt-5-mini replace the gpt-4o pin.
+    ("groq", "qwen/qwen3.6-27b"),
+    ("openai", "gpt-4.1-mini"),
+    ("openai", "gpt-5-mini"),
+    # Google Gemini flash tier — Scout-class cheap/fast vision candidates (2026-07-18).
+    ("google", "gemini-2.5-flash-lite"),
+    ("google", "gemini-3.1-flash-lite"),
+    ("google", "gemini-3-flash-preview"),
+    # OpenRouter free vision model — zero-cost Scout-replacement trial (2026-07-18).
+    ("openrouter", "google/gemma-4-26b-a4b-it:free"),
 }
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -173,10 +204,38 @@ def load_cases() -> list[GoldenCase]:
     return cases
 
 
+# Mirror the client-side uploader (apps/web/src/lib/image-downscale.ts) so image
+# cases send the same payload production does: long edge capped at 1568px,
+# re-encoded to JPEG q0.8, transparency flattened onto white. Feeding raw golden
+# files instead inflates tokens/cost/latency and can trip rate limits production
+# would never hit.
+IMAGE_MAX_LONG_EDGE = 1568
+IMAGE_JPEG_QUALITY = 80
+
+
 def image_to_data_url(path: Path) -> str:
-    subtype = "jpeg" if path.suffix.lower() in {".jpg", ".jpeg"} else path.suffix.lower()[1:]
-    encoded = base64.b64encode(path.read_bytes()).decode()
-    return f"data:image/{subtype};base64,{encoded}"
+    from PIL import Image
+
+    im = Image.open(path)
+    scale = min(1.0, IMAGE_MAX_LONG_EDGE / max(im.width, im.height))
+    if scale < 1.0:
+        im = im.resize(
+            (max(1, round(im.width * scale)), max(1, round(im.height * scale))),
+            Image.LANCZOS,
+        )
+    # JPEG has no alpha: flatten transparency onto white, matching the canvas fill.
+    if im.mode in ("RGBA", "LA", "P"):
+        background = Image.new("RGB", im.size, (255, 255, 255))
+        rgba = im.convert("RGBA")
+        background.paste(rgba, mask=rgba.split()[-1])
+        im = background
+    else:
+        im = im.convert("RGB")
+
+    buffer = io.BytesIO()
+    im.save(buffer, "JPEG", quality=IMAGE_JPEG_QUALITY)
+    encoded = base64.b64encode(buffer.getvalue()).decode()
+    return f"data:image/jpeg;base64,{encoded}"
 
 
 # ---------------------------------------------------------------------------
