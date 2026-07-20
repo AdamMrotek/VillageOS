@@ -28,15 +28,13 @@ def combine_to_datetime(d: date, t: time | None, event_type: EventType) -> datet
 
 
 def draft_to_event(draft: ParentEventDraft) -> ParentEvent:
-    start_time = combine_to_datetime(draft.start_date, draft.start_time_literal, draft.event_type)
+    # The draft shares every field with ParentEvent except its loose date/time
+    # pair, which combine_to_datetime resolves into start_time. Everything else
+    # passes straight through, so dump-and-splat rather than restate each field.
+    passthrough = draft.model_dump(exclude={"start_date", "start_time_literal"})
     return ParentEvent(
-        title=draft.title,
-        event_type=draft.event_type,
-        start_time=start_time,
-        end_time=draft.end_time,
-        is_all_day=draft.is_all_day,
-        location=draft.location,
-        description=draft.description,
-        action_items=draft.action_items,
-        confidence=draft.confidence,
+        **passthrough,
+        start_time=combine_to_datetime(
+            draft.start_date, draft.start_time_literal, draft.event_type
+        ),
     )

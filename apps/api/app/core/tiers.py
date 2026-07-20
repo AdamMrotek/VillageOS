@@ -24,10 +24,10 @@ def resolve_tier(user: dict) -> str:
 # model     None  → use the configured provider's default fast model
 #
 # Demo deliberately leaves `model` as None rather than pinning a name: the model
-# must match the active LLM_PROVIDER (prod runs groq, whose default fast model is
-# the cheap, eval-vetted Scout). Pinning an OpenAI name like "gpt-4o-mini" would
-# be sent to *whatever* provider is configured and fail on groq. The 15/day cap
-# is the real cost backstop here, not the model choice.
+# must match the active LLM_PROVIDER. Pinning a specific model name would send
+# that name to *whatever* provider is configured and fail whenever that provider
+# doesn't serve it. The 15/day cap is the real cost backstop here, not the model
+# choice.
 TIER_POLICY: dict[str, dict] = {
     "demo": {"daily_cap": 15, "model": None},  # cheap default model, tight cap
     "free": {"daily_cap": 50, "model": None},

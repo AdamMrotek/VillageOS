@@ -16,8 +16,6 @@ from app.core.experiments import (
     capture_event,
 )
 
-SCOUT = "meta-llama/llama-4-scout-17b-16e-instruct"
-
 
 def _use_config(monkeypatch, config):
     """Point assignment at a fixed experiment config (or None for disabled),
@@ -25,7 +23,7 @@ def _use_config(monkeypatch, config):
     monkeypatch.setattr(experiments, "_load_config", lambda key: config)
 
 
-def _enabled(variants, default_variant="control"):
+def _enabled(variants, default_variant="openai-nano"):
     return {"enabled": True, "variants": variants, "default_variant": default_variant}
 
 
@@ -55,17 +53,17 @@ class _FakeDB:
 class TestDisabled:
     """No/absent/disabled config -> inert experiment, prod behaviour unchanged."""
 
-    def test_no_config_is_passthrough_control(self, monkeypatch):
+    def test_no_config_is_passthrough(self, monkeypatch):
         _use_config(monkeypatch, None)
         # (None, None) provider/model => the router applies no override, so the
-        # extract_event call is byte-for-byte the pre-experiment path.
+        # extract_event call defers to LLM_PROVIDER — the pre-experiment path.
         assert assign_extraction_variant("u1") == ("control", None, None)
 
-    def test_disabled_flag_is_passthrough_control(self, monkeypatch):
+    def test_disabled_flag_is_passthrough(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         _use_config(
             monkeypatch,
-            {"enabled": False, "variants": {"control": 1.0}, "default_variant": "control"},
+            {"enabled": False, "variants": {"openai-nano": 1.0}, "default_variant": "openai-nano"},
         )
         assert assign_extraction_variant("u1") == ("control", None, None)
 
@@ -100,46 +98,57 @@ class TestBucketing:
 
 
 class TestAssignment:
-    """ADR-019: each arm is a provider stack serving both input types."""
+    """Each arm is a named provider stack (EXTRACTION_ARMS) serving both inputs."""
 
-    def test_control_maps_to_openai_stack(self, monkeypatch):
+    # Assert the provider stack + variant, and only that *some* model is pinned
+    # per input type — an arm's exact model can change without touching the
+    # assignment contract.
+    def test_openai_nano_arm_maps_to_openai(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-        _use_config(monkeypatch, _enabled({"control": 1.0}))
-        assert assign_extraction_variant("u1") == ("control", "openai", "gpt-4o-mini")
-        assert assign_extraction_variant("u1", vision=True) == ("control", "openai", "gpt-4o")
+        _use_config(monkeypatch, _enabled({"openai-nano": 1.0}))
+        for vision in (False, True):
+            variant, provider, model = assign_extraction_variant("u1", vision=vision)
+            assert (variant, provider) == ("openai-nano", "openai")
+            assert model
 
-    def test_treatment_maps_to_groq_stack(self, monkeypatch):
+    def test_groq_qwen_arm_maps_to_groq(self, monkeypatch):
         monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
-        _use_config(monkeypatch, _enabled({"treatment": 1.0}))
-        assert assign_extraction_variant("u1") == ("treatment", "groq", SCOUT)
-        assert assign_extraction_variant("u1", vision=True) == ("treatment", "groq", SCOUT)
+        _use_config(monkeypatch, _enabled({"groq-qwen": 1.0}))
+        for vision in (False, True):
+            variant, provider, model = assign_extraction_variant("u1", vision=vision)
+            # The arm deliberately pins qwen even for text, where production Groq
+            # now defaults to gpt-oss — arms are decoupled from provider defaults.
+            assert (variant, provider, model) == ("groq-qwen", "groq", "qwen/qwen3.6-27b")
 
     def test_assignment_is_stable_across_calls(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         monkeypatch.setenv("GROQ_API_KEY", "gsk-test")
-        _use_config(monkeypatch, _enabled({"control": 0.5, "treatment": 0.5}))
+        _use_config(monkeypatch, _enabled({"openai-nano": 0.5, "groq-qwen": 0.5}))
         assert assign_extraction_variant("u1") == assign_extraction_variant("u1")
 
-    def test_unknown_variant_in_weights_falls_back_to_control(self, monkeypatch):
+    def test_unknown_variant_in_weights_falls_back_to_passthrough(self, monkeypatch):
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         _use_config(monkeypatch, _enabled({"mystery": 1.0}, default_variant="mystery"))
-        assert assign_extraction_variant("u1")[0] == "control"
+        # "mystery" is not a real arm -> passthrough to the env default, not a
+        # pinned stand-in.
+        assert assign_extraction_variant("u1") == ("control", None, None)
 
 
 class TestProviderKeyGuard:
-    """An arm whose provider key is unset must downgrade, not 500."""
+    """An arm whose provider key is unset falls through to env, not a 500."""
 
-    def test_treatment_without_groq_key_downgrades_to_control(self, monkeypatch):
+    def test_unkeyed_arm_falls_through_to_passthrough(self, monkeypatch):
+        # groq-qwen is assigned but GROQ_API_KEY is unset; even with OpenAI keyed,
+        # we do NOT pin a stand-in arm — we defer to LLM_PROVIDER (provider=None).
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-        _use_config(monkeypatch, _enabled({"treatment": 1.0}))
-        variant, provider, _ = assign_extraction_variant("u1")
-        assert (variant, provider) == ("control", "openai")
+        _use_config(monkeypatch, _enabled({"groq-qwen": 1.0}))
+        assert assign_extraction_variant("u1") == ("control", None, None)
 
     def test_both_keys_missing_falls_through_to_passthrough(self, monkeypatch):
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        _use_config(monkeypatch, _enabled({"treatment": 1.0}))
+        _use_config(monkeypatch, _enabled({"groq-qwen": 1.0}))
         # No usable arm: behave like the disabled experiment so the router applies
         # no override instead of 500ing in _get_client.
         assert assign_extraction_variant("u1") == ("control", None, None)

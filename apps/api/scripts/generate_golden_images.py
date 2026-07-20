@@ -13,6 +13,7 @@ Run once (Pillow is a dev-only dependency, not in requirements):
 
 import random
 from pathlib import Path
+from typing import cast
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
@@ -27,7 +28,7 @@ def font(name: str, size: int) -> ImageFont.FreeTypeFont:
 def centred(draw: ImageDraw.ImageDraw, y: int, text: str, f, fill="black", width=900) -> int:
     box = draw.textbbox((0, 0), text, font=f)
     draw.text(((width - (box[2] - box[0])) / 2, y), text, font=f, fill=fill)
-    return y + (box[3] - box[1]) + 28
+    return round(y + (box[3] - box[1]) + 28)
 
 
 def leaflet_07() -> None:
@@ -98,13 +99,14 @@ def photo_09() -> None:
 
     # Phone-photo treatment: slight rotation against a dark table background,
     # mild blur and sensor-ish noise so OCR isn't pixel-perfect.
-    photo = flat.rotate(3.5, expand=True, fillcolor="#3a342c", resample=Image.BICUBIC)
+    photo = flat.rotate(3.5, expand=True, fillcolor="#3a342c", resample=Image.Resampling.BICUBIC)
     photo = photo.filter(ImageFilter.GaussianBlur(0.7))
     rng = random.Random(7)
     px = photo.load()
+    assert px is not None  # RGB image always has pixel access
     for _ in range(28000):
         x, y2 = rng.randrange(photo.width), rng.randrange(photo.height)
-        r, g, b = px[x, y2]
+        r, g, b = cast(tuple[int, int, int], px[x, y2])
         n = rng.randint(-14, 14)
         px[x, y2] = (max(0, min(255, r + n)), max(0, min(255, g + n)), max(0, min(255, b + n)))
     photo.save(GOLDEN_DIR / "img_09_photo_no_year.jpg", quality=80)

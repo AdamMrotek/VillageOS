@@ -1,18 +1,9 @@
 """LLM event extraction: turn raw text and/or a photo into a structured ParentEvent.
 
-What one `extract_event` call does, in order:
-
-1. Pick a system prompt (the vision variant when an image is attached).
-2. Pick a provider + model — from settings, or pinned by the caller (the eval
-   harness pins specific combos to compare them).
-3. Build the chat messages and call the LLM. `instructor` validates the reply
-   against our Pydantic schema and retries automatically if it's malformed.
-4. If the model reports low confidence, retry once on the provider's smarter
-   (more expensive) model.
-5. Return the event — plus run telemetry when the caller asks for it.
-
-Names starting with `_` are private to this module; everything else is the
-public surface (used by the extract router and the eval harness).
+`extract_event` picks a prompt/provider/model, calls the LLM (via `instructor`,
+which validates the reply against the Pydantic schema and retries on malformed
+output), optionally escalates to a smarter model on low confidence, and returns
+the event with optional telemetry.
 """
 
 import logging
@@ -36,122 +27,34 @@ from app.schemas.events import ExtractResponse, ParentEvent
 from app.schemas.extraction_draft import ParentEventDraft
 from app.services.extraction_date import build_date_table, draft_to_event
 from app.services.extraction_fake import fake_extract_event
+from app.services.llm_providers import MODEL_MODES, PROVIDERS
 
 logger = logging.getLogger("villageos.extraction")
 
 
-# ---------------------------------------------------------------------------
-# Provider configuration
-# ---------------------------------------------------------------------------
+def get_vision_defaults() -> tuple[str, str]:
+    """Default (provider, vision_model) for image requests.
+
+    Vision rides the same provider as the text default (LLM_PROVIDER); every
+    provider in PROVIDERS ships a vision model, so this always resolves. Used
+    when the experiment is disabled or the assigned arm's provider key is missing.
+    """
+    provider = get_settings().llm_provider.lower()
+    cfg = PROVIDERS.get(provider)
+    if cfg is None:
+        raise ValueError(f"Unsupported LLM provider: {provider}")
+    return provider, cfg.vision_model
 
 
-@dataclass(frozen=True)
-class ProviderConfig:
-    """How to reach one LLM provider and which of its models we use."""
-
-    # None means the OpenAI SDK default (api.openai.com).
-    base_url: str | None
-    # Env var holding the API key; its lowercase form is the Settings field
-    # name. None means no real key is needed (local Ollama).
-    api_key_env: str | None
-    fast_model: str
-    # Escalation target on low confidence. Same as fast_model = no escalation.
-    smart_model: str
-    # How instructor requests structured output: "TOOLS" or "JSON".
-    mode: str
-    # Only set for providers that can read images.
-    vision_model: str | None = None
-    # Placeholder key for providers with api_key_env=None (Ollama takes any string).
-    default_key: str | None = None
-
-
-_PROVIDERS: dict[str, ProviderConfig] = {
-    "ollama": ProviderConfig(
-        base_url="http://localhost:11434/v1",
-        api_key_env=None,
-        default_key="ollama",
-        fast_model="llama3.1:8b",
-        smart_model="llama3.1:8b",
-        mode="TOOLS",
-    ),
-    "groq": ProviderConfig(
-        base_url="https://api.groq.com/openai/v1",
-        api_key_env="GROQ_API_KEY",
-        # Scout was removed from Groq (deprecated 2026-06-17); qwen3.6-27b is
-        # Groq's recommended replacement and the strongest of the survivors on
-        # the golden vision set (grader ~9/10). Escalation disabled
-        # (smart_model = fast_model): the survey showed no confidence-linked
-        # failure mode that a larger model would fix.
-        fast_model="qwen/qwen3.6-27b",
-        smart_model="qwen/qwen3.6-27b",
-        mode="JSON",
-    ),
-    "openai": ProviderConfig(
-        base_url=None,
-        api_key_env="OPENAI_API_KEY",
-        fast_model="gpt-4o-mini",
-        smart_model="gpt-4o",
-        vision_model="gpt-4o",
-        mode="TOOLS",
-    ),
-    # Gemini exposes an OpenAI-compatible endpoint, so it rides the same
-    # instructor/AsyncOpenAI path as the others. JSON mode (not TOOLS) because
-    # the compat layer's structured output is most reliable that way, matching
-    # how Groq is configured. Scout-replacement survey candidate (2026-07-18).
-    "google": ProviderConfig(
-        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-        api_key_env="GEMINI_API_KEY",
-        # 3.1-flash-lite is GA and durable; the 2.5 line shuts down 2026-10-16.
-        fast_model="gemini-3.1-flash-lite",
-        smart_model="gemini-3.5-flash",
-        vision_model="gemini-3.1-flash-lite",
-        mode="JSON",
-    ),
-    # OpenRouter aggregator (OpenAI-compatible). Used to trial free vision
-    # models the other providers dropped — e.g. gemma-4 with :free routing.
-    # Scout-replacement survey candidate (2026-07-18).
-    "openrouter": ProviderConfig(
-        base_url="https://openrouter.ai/api/v1",
-        api_key_env="OPENROUTER_API_KEY",
-        fast_model="google/gemma-4-26b-a4b-it:free",
-        smart_model="google/gemma-4-26b-a4b-it:free",
-        vision_model="google/gemma-4-26b-a4b-it:free",
-        mode="JSON",
-    ),
-}
-
-# Default vision route when the experiment is disabled or the assigned arm's
-# provider key is missing (ADR-019 folds vision into the A/B arms; before that
-# this pin was the only vision path). Content-part messages are confirmed
-# working under Groq JSON mode (eval run 2026-06-12), so both arms can serve
-# images.
-VISION_PROVIDER = "openai"
-
-
-def get_vision_model() -> str:
-    vision_model = _PROVIDERS[VISION_PROVIDER].vision_model
-    if vision_model is None:
-        raise RuntimeError(f"Provider '{VISION_PROVIDER}' has no vision model configured.")
-    return vision_model
-
-
-# ---------------------------------------------------------------------------
-# Client setup
-# ---------------------------------------------------------------------------
-
-# One client per (provider, mode) pair, created on first use and reused for
-# the life of the process so every request shares connection pools.
+# One client per (provider, mode) pair, cached for the process so requests share
+# connection pools.
 _clients: dict[tuple[str, str], instructor.AsyncInstructor] = {}
 
 
-def _resolve_mode(override: str | None, provider_default: str) -> instructor.Mode:
-    """Turn a mode name into the instructor.Mode enum.
-
-    Precedence: caller override > INSTRUCTOR_MODE setting > provider default.
-    """
-    name = (override or get_settings().instructor_mode or provider_default).upper()
+def _mode_enum(name: str) -> instructor.Mode:
+    """Look up an instructor.Mode by name (case-insensitive), raising on unknown."""
     try:
-        return instructor.Mode[name]
+        return instructor.Mode[name.upper()]
     except KeyError as e:
         valid = [m.name for m in instructor.Mode]
         raise ValueError(f"Unknown instructor mode '{name}'. Valid: {valid}") from e
@@ -162,10 +65,10 @@ def _get_client(provider: str, mode: instructor.Mode) -> instructor.AsyncInstruc
     if cache_key in _clients:
         return _clients[cache_key]
 
-    if provider not in _PROVIDERS:
+    if provider not in PROVIDERS:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
-    cfg = _PROVIDERS[provider]
+    cfg = PROVIDERS[provider]
     api_key = cfg.default_key
     if cfg.api_key_env:
         api_key = getattr(get_settings(), cfg.api_key_env.lower()) or api_key
@@ -180,11 +83,6 @@ def _get_client(provider: str, mode: instructor.Mode) -> instructor.AsyncInstruc
     return client
 
 
-# ---------------------------------------------------------------------------
-# Building the request
-# ---------------------------------------------------------------------------
-
-
 def _build_messages(
     system_prompt: str,
     today: date,
@@ -194,8 +92,7 @@ def _build_messages(
     """System prompt (with today's date filled in) + the user's text/image."""
     user_content: str | list[ChatCompletionContentPartParam]
     if image_data_url:
-        # OpenAI accepts data: URLs directly; detail="high" because the value in
-        # a leaflet is the small print (times, prices, return-slip deadlines).
+        # detail="high" to read small print (times, prices, return-slip deadlines).
         parts: list[ChatCompletionContentPartParam] = [
             {"type": "image_url", "image_url": {"url": image_data_url, "detail": "high"}}
         ]
@@ -203,7 +100,6 @@ def _build_messages(
             parts.append({"type": "text", "text": raw_text})
         user_content = parts
     else:
-        # Text-only requests must stay a plain string (the pre-vision contract).
         user_content = raw_text or ""
 
     return [
@@ -226,35 +122,6 @@ def _describe_input(raw_text: str | None, image_data_url: str | None) -> tuple[s
     base64_payload = image_data_url.split(",", 1)[1]
     image_bytes = (len(base64_payload) * 3) // 4  # base64: 4 chars encode 3 bytes
     return ("text+image" if raw_text else "image"), image_bytes
-
-
-def _redact_messages(
-    messages: list[ChatCompletionMessageParam],
-) -> list[dict]:
-    """Copy of `messages` safe for logging: base64 image payloads replaced with
-    a placeholder so user photos never reach CloudWatch."""
-    redacted: list[dict] = []
-    for message in messages:
-        content = message.get("content")
-        if not isinstance(content, list):
-            redacted.append(dict(message))
-            continue
-        safe_parts: list[dict] = [
-            {
-                "type": "image_url",
-                "image_url": f"<redacted image, {len(part['image_url']['url'])} chars>",
-            }
-            if part.get("type") == "image_url"
-            else dict(part)
-            for part in content
-        ]
-        redacted.append({**message, "content": safe_parts})
-    return redacted
-
-
-# ---------------------------------------------------------------------------
-# Calling the LLM
-# ---------------------------------------------------------------------------
 
 
 async def _extract_once(
@@ -308,20 +175,193 @@ class ExtractionRunDetails:
     tokens_used: int
     prompt_tokens: int
     completion_tokens: int
-    # The same two instruments the online extraction_completed log records, so
-    # the offline eval and production read identical metrics — enabling the
-    # offline↔online cost/latency comparison.
     llm_duration_ms: float
     input_length_chars: int
-    # "text" | "image" | "text+image" — and the decoded image size, when present.
+    # "text" | "image" | "text+image", and the decoded image size when present.
     input_type: str = "text"
     image_bytes: int | None = None
 
 
-# The @overload blocks below exist only for the type checker: they tell it
-# that return_details=False yields an ExtractResponse and return_details=True
-# yields a (response, details) tuple. The undecorated function is the one
-# that actually runs.
+@dataclass(frozen=True)
+class ExtractConfig:
+    """A fully-resolved extraction configuration.
+
+    `resolve_config` decides everything `run_extraction` needs; the executor just
+    runs it. `escalate_to` names a smarter model to retry once when confidence
+    < 0.7; None (or a value equal to `model`) means no escalation.
+    """
+
+    provider: str
+    model: str
+    mode: instructor.Mode
+    prompt_version: str | None = None
+    escalate_to: str | None = None
+
+
+async def run_extraction(
+    raw_text: str | None,
+    image_data_url: str | None,
+    config: ExtractConfig,
+    *,
+    today: date,
+    request_id: str | None = None,
+) -> tuple[ExtractResponse, ExtractionRunDetails]:
+    """Run one extraction for a fully-resolved config and return it with telemetry.
+
+    The fast call always runs; the escalation call runs only when
+    `config.escalate_to` names a different model and the fast reply's confidence
+    is low.
+    """
+    version, system_prompt = get_prompt(config.prompt_version)
+    client = _get_client(config.provider, config.mode)
+
+    messages = _build_messages(system_prompt, today, raw_text, image_data_url)
+    input_type, image_bytes = _describe_input(raw_text, image_data_url)
+
+    # User content, so DEBUG only. Logged before the call so it survives a
+    # failure. The base64 image is never logged — keeps user photos out of logs.
+    logger.debug(
+        "extraction_prompt",
+        extra={
+            "event": "extraction_prompt",
+            "request_id": request_id,
+            "provider": config.provider,
+            "model": config.model,
+            "prompt_version": version,
+            "system_prompt": messages[0]["content"],
+            "raw_text": raw_text,
+            "input_type": input_type,
+        },
+    )
+
+    llm_start = time.perf_counter()
+    tokens = _TokenUsage()
+
+    used_model = config.model
+    event, completion = await _extract_once(client, used_model, messages, version, today)
+    tokens.add(completion)
+
+    if config.escalate_to and config.escalate_to != config.model and event.confidence < 0.7:
+        used_model = config.escalate_to
+        event, completion = await _extract_once(client, used_model, messages, version, today)
+        tokens.add(completion)
+
+    llm_duration_ms = round((time.perf_counter() - llm_start) * 1000, 1)
+
+    response = ExtractResponse(event=event, model_used=used_model, tokens_used=tokens.total)
+
+    logger.info(
+        "extraction_completed",
+        extra={
+            "event": "extraction_completed",
+            "request_id": request_id,
+            "model": used_model,
+            "provider": config.provider,
+            "prompt_version": version,
+            "mode": config.mode.name,
+            "llm_duration_ms": llm_duration_ms,
+            "prompt_tokens": tokens.prompt,
+            "completion_tokens": tokens.completion,
+            "total_tokens": tokens.total,
+            "confidence": event.confidence,
+            "input_length_chars": len(raw_text or ""),
+            "input_type": input_type,
+            "image_bytes": image_bytes,
+        },
+    )
+
+    # Full extracted payload — user content, so DEBUG only.
+    logger.debug(
+        "extraction_result",
+        extra={
+            "event": "extraction_result",
+            "request_id": request_id,
+            "result": event.model_dump(mode="json"),
+        },
+    )
+
+    details = ExtractionRunDetails(
+        provider=config.provider,
+        model=used_model,
+        prompt_version=version,
+        mode=config.mode.name,
+        tokens_used=tokens.total,
+        prompt_tokens=tokens.prompt,
+        completion_tokens=tokens.completion,
+        llm_duration_ms=llm_duration_ms,
+        input_length_chars=len(raw_text or ""),
+        input_type=input_type,
+        image_bytes=image_bytes,
+    )
+    return response, details
+
+
+def _fake_extraction(
+    raw_text: str | None,
+    image_data_url: str | None,
+    version: str,
+) -> tuple[ExtractResponse, ExtractionRunDetails]:
+    """E2E seam for LLM_PROVIDER=fake: canned fixtures, no client/network/key.
+
+    Also requires E2E_FAKE_LLM=1 (set only by the test/CI e2e job) so a stray
+    LLM_PROVIDER=fake in a real environment fails loudly instead of serving
+    fixtures to users.
+    """
+    if os.getenv("E2E_FAKE_LLM") != "1":
+        raise ValueError(
+            "LLM_PROVIDER=fake requires E2E_FAKE_LLM=1 (test/e2e runs only); "
+            "refusing to serve canned fixtures outside a test environment"
+        )
+    input_type, image_bytes = _describe_input(raw_text, image_data_url)
+    response = ExtractResponse(event=fake_extract_event(raw_text), model_used="fake", tokens_used=0)
+    details = ExtractionRunDetails(
+        provider="fake",
+        model="fake",
+        prompt_version=version,
+        mode="FAKE",
+        tokens_used=0,
+        prompt_tokens=0,
+        completion_tokens=0,
+        llm_duration_ms=0.0,
+        input_length_chars=len(raw_text or ""),
+        input_type=input_type,
+        image_bytes=image_bytes,
+    )
+    return response, details
+
+
+def resolve_config(
+    provider: str | None,
+    model: str | None,
+    mode: str | None,
+    prompt_version: str,
+    *,
+    escalate: bool,
+) -> ExtractConfig:
+    """Resolve optional overrides + settings into a finished ExtractConfig.
+
+    Provider comes from the override or LLM_PROVIDER; the model from the override
+    or the provider's fast_model; the mode from the override, the model's
+    MODEL_MODES entry, or the provider default, in that order. `escalate=True`
+    wires escalate_to to the provider's smart_model (production default);
+    False leaves it off (eval and A/B arms).
+    """
+    resolved_provider = (provider or get_settings().llm_provider).lower()
+    if resolved_provider not in PROVIDERS:
+        raise ValueError(f"Unsupported LLM provider: {resolved_provider}")
+    cfg = PROVIDERS[resolved_provider]
+    resolved_model = model or cfg.fast_model
+    return ExtractConfig(
+        provider=resolved_provider,
+        model=resolved_model,
+        mode=_mode_enum(mode or MODEL_MODES.get(resolved_model) or cfg.mode),
+        prompt_version=prompt_version,
+        escalate_to=cfg.smart_model if escalate else None,
+    )
+
+
+# @overload: return_details=False yields ExtractResponse, True yields
+# (response, details). The undecorated function below is the one that runs.
 
 
 @overload
@@ -377,144 +417,25 @@ async def extract_event(
 
     `image_data_url` (a `data:image/...;base64,...` URL) adds the image to the
     user message; the caller is expected to pin a vision-capable provider/model
-    (see VISION_PROVIDER / get_vision_model). The schema layer guarantees at
+    (see get_vision_defaults). The schema layer guarantees at
     least one of raw_text / image_data_url is present.
     """
     today = today or date.today()
 
-    # 1. Pick the prompt (vision variant when an image is attached).
+    # Default to the vision prompt when an image is attached.
     if prompt_version is None and image_data_url:
         prompt_version = VISION_VERSION
-    version, system_prompt = get_prompt(prompt_version)
+    version, _ = get_prompt(prompt_version)
 
-    # 2. Resolve provider, models, and client. A pinned call (explicit
-    #    provider or model) never escalates — the eval needs each combo to
-    #    answer for itself.
-    pinned = provider is not None or model is not None
-    resolved_provider = (provider or get_settings().llm_provider).lower()
-
-    # E2E seam: LLM_PROVIDER=fake short-circuits to canned fixtures — no
-    # instructor client, no network, no key. Double-gated: the fake branch also
-    # requires E2E_FAKE_LLM=1, which only the test harness / CI e2e job sets, so
-    # a stray LLM_PROVIDER=fake in a real environment fails loudly instead of
-    # silently serving fixtures to users.
-    if resolved_provider == "fake":
-        if os.getenv("E2E_FAKE_LLM") != "1":
-            raise ValueError(
-                "LLM_PROVIDER=fake requires E2E_FAKE_LLM=1 (test/e2e runs only); "
-                "refusing to serve canned fixtures outside a test environment"
-            )
-        response = ExtractResponse(
-            event=fake_extract_event(raw_text), model_used="fake", tokens_used=0
+    if (provider or get_settings().llm_provider).lower() == "fake":
+        response, details = _fake_extraction(raw_text, image_data_url, version)
+    else:
+        # A pinned call (explicit provider or model) skips escalation; the
+        # default production path retries on the smart_model.
+        pinned = provider is not None or model is not None
+        config = resolve_config(provider, model, mode, version, escalate=not pinned)
+        response, details = await run_extraction(
+            raw_text, image_data_url, config, today=today, request_id=request_id
         )
-        if return_details:
-            input_type, image_bytes = _describe_input(raw_text, image_data_url)
-            return response, ExtractionRunDetails(
-                provider="fake",
-                model="fake",
-                prompt_version=version,
-                mode="FAKE",
-                tokens_used=0,
-                prompt_tokens=0,
-                completion_tokens=0,
-                llm_duration_ms=0.0,
-                input_length_chars=len(raw_text or ""),
-                input_type=input_type,
-                image_bytes=image_bytes,
-            )
-        return response
 
-    if resolved_provider not in _PROVIDERS:
-        raise ValueError(f"Unsupported LLM provider: {resolved_provider}")
-    cfg = _PROVIDERS[resolved_provider]
-    fast_model = model or cfg.fast_model
-    smart_model = model or cfg.smart_model
-    resolved_mode = _resolve_mode(mode, cfg.mode)
-    client = _get_client(resolved_provider, resolved_mode)
-
-    # 3. Build the request.
-    messages = _build_messages(system_prompt, today, raw_text, image_data_url)
-    input_type, image_bytes = _describe_input(raw_text, image_data_url)
-
-    # Full prompt sent to the model — user content + large, so DEBUG only
-    # (LOG_LEVEL=DEBUG). Logged before the call so it survives a failed request.
-    logger.debug(
-        "extraction_prompt",
-        extra={
-            "event": "extraction_prompt",
-            "request_id": request_id,
-            "provider": resolved_provider,
-            "model": fast_model,
-            "prompt_version": version,
-            "messages": _redact_messages(messages),
-        },
-    )
-
-    # 4. Call the LLM; one retry on the smart model if confidence is low.
-    llm_start = time.perf_counter()
-    tokens = _TokenUsage()
-
-    used_model = fast_model
-    event, completion = await _extract_once(client, used_model, messages, version, today)
-    tokens.add(completion)
-
-    if not pinned and event.confidence < 0.7 and fast_model != smart_model:
-        used_model = smart_model
-        event, completion = await _extract_once(client, used_model, messages, version, today)
-        tokens.add(completion)
-
-    llm_duration_ms = round((time.perf_counter() - llm_start) * 1000, 1)
-
-    # 5. Package the response and log telemetry.
-    response = ExtractResponse(
-        event=event,
-        model_used=used_model,
-        tokens_used=tokens.total,
-    )
-
-    logger.info(
-        "extraction_completed",
-        extra={
-            "event": "extraction_completed",
-            "request_id": request_id,
-            "model": used_model,
-            "provider": resolved_provider,
-            "prompt_version": version,
-            "mode": resolved_mode.name,
-            "llm_duration_ms": llm_duration_ms,
-            "prompt_tokens": tokens.prompt,
-            "completion_tokens": tokens.completion,
-            "total_tokens": tokens.total,
-            "confidence": event.confidence,
-            "input_length_chars": len(raw_text or ""),
-            "input_type": input_type,
-            "image_bytes": image_bytes,
-        },
-    )
-
-    # Full extracted payload — user content, so gated behind DEBUG (LOG_LEVEL=DEBUG).
-    logger.debug(
-        "extraction_result",
-        extra={
-            "event": "extraction_result",
-            "request_id": request_id,
-            "result": event.model_dump(mode="json"),
-        },
-    )
-
-    if return_details:
-        details = ExtractionRunDetails(
-            provider=resolved_provider,
-            model=used_model,
-            prompt_version=version,
-            mode=resolved_mode.name,
-            tokens_used=tokens.total,
-            prompt_tokens=tokens.prompt,
-            completion_tokens=tokens.completion,
-            llm_duration_ms=llm_duration_ms,
-            input_length_chars=len(raw_text or ""),
-            input_type=input_type,
-            image_bytes=image_bytes,
-        )
-        return response, details
-    return response
+    return (response, details) if return_details else response

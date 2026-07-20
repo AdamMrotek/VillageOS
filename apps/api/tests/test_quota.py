@@ -29,8 +29,8 @@ class TestResolveTier:
 
 class TestTierPolicy:
     def test_demo_is_capped_on_provider_default_model(self):
-        # model None → use the configured provider's cheap default (groq Scout
-        # in prod); pinning an OpenAI name would break under LLM_PROVIDER=groq.
+        # model None → use the configured provider's cheap default (groq
+        # qwen3.6-27b in prod); pinning an OpenAI name would break under LLM_PROVIDER=groq.
         assert TIER_POLICY["demo"] == {"daily_cap": 15, "model": None}
 
     def test_free_capped_on_default_model(self):

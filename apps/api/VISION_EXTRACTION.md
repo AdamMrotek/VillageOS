@@ -16,9 +16,10 @@ phone camera / file picker
 ```
 
 The image travels **inline as a base64 data URL and is never persisted** — no
-S3, no CDN, redacted from DEBUG logs (`_redact_messages`), never written to
-analytics. Same `instructor` contract, quota metering, and draft-review UI as
-text extraction.
+S3, no CDN, never logged (the `extraction_prompt` DEBUG log records the system
+prompt and user text only, never the base64 image), never written to analytics.
+Same `instructor` contract, quota metering, and draft-review UI as text
+extraction.
 
 ## Decisions (rationale in ADR-018)
 
@@ -109,7 +110,7 @@ reality. The follow-up eval should:
 | Concern | Where |
 |---------|-------|
 | Vision prompt (`v3v`) | `app/prompts/extraction/v3_vision.py` |
-| Multimodal call, redaction, telemetry | `app/services/extraction.py` |
+| Multimodal call, telemetry | `app/services/extraction.py` |
 | Request schema (`image_data_url` rules) | `app/schemas/events.py` |
 | A/B bypass | `app/routers/extract.py` |
 | Client downscale | `apps/web/src/lib/image-downscale.ts` |

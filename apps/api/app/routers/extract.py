@@ -11,7 +11,7 @@ from app.core.experiments import (
 )
 from app.core.tiers import policy_for, resolve_tier
 from app.schemas.events import ExperimentInfo, ExtractRequest, ExtractResponse
-from app.services.extraction import VISION_PROVIDER, extract_event, get_vision_model
+from app.services.extraction import extract_event, get_vision_defaults
 from app.services.usage import bump_usage
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ async def extract(
     variant, provider, model = assign_extraction_variant(user["sub"], vision=is_vision)
     if is_vision and provider is None:
         # Experiment disabled (or arm unkeyed): pre-experiment vision default.
-        provider, model = VISION_PROVIDER, get_vision_model()
+        provider, model = get_vision_defaults()
 
     try:
         response = await extract_event(

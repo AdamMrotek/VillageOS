@@ -1,7 +1,8 @@
 """Router-level vision behavior (ADR-019): image requests ride the same A/B
 flag as text — the assigned arm's stack serves both paths. With the experiment
-disabled (assignment passthrough) vision falls back to the pinned default
-(openai/gpt-4o) so prod behaviour with the experiment disabled is unchanged."""
+disabled (assignment passthrough) vision falls back to the configured default
+provider's vision model, so prod behaviour with the experiment disabled is
+unchanged."""
 
 from datetime import datetime
 from types import SimpleNamespace
@@ -14,7 +15,7 @@ import app.routers.extract as extract_router
 from app.schemas.events import ExtractRequest, ExtractResponse, ParentEvent
 
 IMAGE_URL = "data:image/jpeg;base64,aGVsbG8="
-SCOUT = "meta-llama/llama-4-scout-17b-16e-instruct"
+QWEN = "qwen/qwen3.6-27b"
 
 
 def _response() -> ExtractResponse:
@@ -76,26 +77,30 @@ class TestVisionRequest:
         body = ExtractRequest(image_data_url=IMAGE_URL)
         response = await extract_router.extract(body, _request(), USER)
 
+        default_provider, default_vision_model = extract_router.get_vision_defaults()
         assert harness.assign_args == {"user_id": "u1", "vision": True}
-        assert harness.extract_kwargs["provider"] == extract_router.VISION_PROVIDER
-        assert harness.extract_kwargs["model"] == extract_router.get_vision_model()
+        assert harness.extract_kwargs["provider"] == default_provider
+        assert harness.extract_kwargs["model"] == default_vision_model
         assert harness.extract_kwargs["image_data_url"] == IMAGE_URL
-        # Exposure + experiment info report the actual routing after fallback.
-        assert harness.captures == [("u1", "control", "openai", "gpt-4o")]
+        # Exposure + experiment info report the actual routing after fallback:
+        # the default provider and its configured vision model, whatever they are.
+        assert harness.captures == [
+            ("u1", "control", default_provider, default_vision_model)
+        ]
         assert response.experiment is not None
         assert response.experiment.variant == "control"
 
     async def test_assigned_arm_drives_vision_model(self, harness):
-        harness.assignment = ("treatment", "groq", SCOUT)
+        harness.assignment = ("treatment", "groq", QWEN)
         body = ExtractRequest(image_data_url=IMAGE_URL)
         response = await extract_router.extract(body, _request(), USER)
 
         assert harness.extract_kwargs["provider"] == "groq"
-        assert harness.extract_kwargs["model"] == SCOUT
-        assert harness.captures == [("u1", "treatment", "groq", SCOUT)]
+        assert harness.extract_kwargs["model"] == QWEN
+        assert harness.captures == [("u1", "treatment", "groq", QWEN)]
         assert response.experiment is not None
         assert response.experiment.variant == "treatment"
-        assert response.experiment.model == SCOUT
+        assert response.experiment.model == QWEN
 
     async def test_caption_forwarded_alongside_image(self, harness):
         body = ExtractRequest(raw_text="for Mia", image_data_url=IMAGE_URL)

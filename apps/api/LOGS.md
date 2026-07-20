@@ -10,7 +10,7 @@ Two log events carry the useful signal:
 |---|---|---|
 | `request_completed` | `RequestContextMiddleware` (every request) | `method`, `path`, `status`, `duration_ms`, `request_id` |
 | `extraction_completed` | `extraction.extract_event` (per LLM extraction) | `model`, `provider`, `llm_duration_ms`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `confidence`, `input_length_chars`, `request_id` |
-| `extraction_prompt` | `extraction.extract_event`, **DEBUG only** | full `messages` array sent to the model (system prompt + user text); logged *before* the LLM call so it survives a failed request |
+| `extraction_prompt` | `extraction.extract_event`, **DEBUG only** | rendered `system_prompt` and the user's `raw_text` sent to the model (never the base64 image); logged *before* the LLM call so it survives a failed request |
 | `extraction_result` | `extraction.extract_event`, **DEBUG only** | full extracted event payload under `result` (user content — emitted only when `LOG_LEVEL=DEBUG`) |
 | `extract_metered` | `extract` route (per quota'd extract, before the LLM call) | `tier`, `daily_count`, `request_id` |
 | `quota_exceeded` | `extract` route (per-identity daily cap exceeded → `429`) | `tier`, `request_id` |
@@ -150,13 +150,14 @@ The most direct debugging view — what the LLM actually received. Pair it with 
 `extraction_result` for the same `request_id` to see prompt-in / event-out:
 
 ```sql
-fields @timestamp, request_id, model, messages.1.content
+fields @timestamp, request_id, model, raw_text, system_prompt
 | filter event = "extraction_prompt"
 | sort @timestamp desc
 | limit 20
 ```
 
-(`messages.0` is the system prompt, `messages.1` is the user's pasted text.)
+(`raw_text` is the user's pasted text; `system_prompt` is the rendered system
+prompt. The base64 image is never logged.)
 
 ### Inspect extracted payloads (DEBUG only)
 
