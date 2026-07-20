@@ -51,15 +51,6 @@ export function adminGet<T>(path: string): Promise<T> {
   return adminFetch<T>(path);
 }
 
-/** PATCH an admin endpoint with a JSON body. */
-export function adminPatch<T>(path: string, body: unknown): Promise<T> {
-  return adminFetch<T>(path, {
-    method: "PATCH",
-    body: JSON.stringify(body),
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
 /** GET an admin endpoint that returns binary (e.g. a golden image). The bearer
  *  header can't ride on a plain <img src>, so the caller turns this blob into an
  *  object URL. Throws NotAuthenticated / ApiError like the JSON helpers. */
@@ -88,34 +79,3 @@ export async function adminGetBlob(path: string): Promise<Blob> {
   }
   return res.blob();
 }
-
-// ── The /api/admin/experiments/extraction response shape ───────────────────
-export type OutcomeRow = {
-  model: string;
-  shown: number;
-  accepted: number;
-  re_extracted: number;
-  discarded: number;
-  not_completed: number;
-  completion_pct: number | null;
-  discard_pct: number | null;
-  reextract_pct: number | null;
-};
-
-export type FieldEditRow = {
-  field: string;
-  control_pct: number | null;
-  treatment_pct: number | null;
-};
-
-export type ExtractionReadout = {
-  outcomes: OutcomeRow[];
-  field_edits: FieldEditRow[];
-};
-
-// ── The /api/admin/experiments/extraction/config response shape ─────────────
-export type ExperimentConfig = {
-  enabled: boolean;
-  variants: Record<string, number>;
-  default_variant: string;
-};

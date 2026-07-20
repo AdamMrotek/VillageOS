@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import io
 import itertools
 import json
 import os
@@ -38,7 +39,8 @@ load_dotenv()
 
 from app.prompts.extraction import VERSIONS as PROMPT_VERSIONS
 from app.prompts.extraction import VISION_VERSION
-from app.services.extraction import ExtractionRunDetails, extract_event
+from app.services.extraction import ExtractionRunDetails, resolve_config, run_extraction
+from app.services.llm_providers import PROVIDERS, ProviderConfig, register_provider
 from evals.extraction.grader import (
     GRADER_MODEL,
     GRADER_PROVIDER,
@@ -48,6 +50,80 @@ from evals.extraction.grader import (
 )
 from evals.extraction.storage import append_rows, new_run_id
 
+# ---------------------------------------------------------------------------
+# Survey/eval-only providers + their candidates' modes
+# ---------------------------------------------------------------------------
+# Production (app.services.llm_providers) ships only openai + groq. The eval
+# brings back the Scout-replacement survey candidates and declares each model's
+# structured-output mode, so they resolve through the same client/mode path as
+# production. Modes that match the provider default are declared anyway to keep
+# the candidate roster self-documenting.
+register_provider(
+    "google",
+    ProviderConfig(
+        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        api_key_env="GEMINI_API_KEY",
+        # 3.1-flash-lite is GA and durable; the 2.5 line shuts down 2026-10-16.
+        fast_model="gemini-3.1-flash-lite",
+        smart_model="gemini-3.5-flash",
+        vision_model="gemini-3.1-flash-lite",
+        mode="JSON",
+    ),
+    model_modes={
+        "gemini-3.1-flash-lite": "JSON",
+        "gemini-3.5-flash": "JSON",
+        "gemini-2.5-flash-lite": "JSON",
+        "gemini-3-flash-preview": "JSON",
+    },
+)
+register_provider(
+    "openrouter",
+    ProviderConfig(
+        base_url="https://openrouter.ai/api/v1",
+        api_key_env="OPENROUTER_API_KEY",
+        fast_model="google/gemma-4-26b-a4b-it:free",
+        smart_model="google/gemma-4-26b-a4b-it:free",
+        vision_model="google/gemma-4-26b-a4b-it:free",
+        mode="JSON",
+    ),
+    model_modes={"google/gemma-4-26b-a4b-it:free": "JSON"},
+)
+register_provider(
+    "ollama",
+    ProviderConfig(
+        base_url="http://localhost:11434/v1",
+        api_key_env=None,
+        default_key="ollama",
+        fast_model="llama3.1:8b",
+        smart_model="llama3.1:8b",
+        vision_model="llama3.2-vision",
+        mode="TOOLS",
+    ),
+    model_modes={"llama3.1:8b": "TOOLS"},
+)
+# Extra groq/openai candidates beyond the two production models. They already
+# inherit their provider's default mode, but declaring them keeps the sweep's
+# model→mode map explicit alongside PRICING_USD_PER_M below.
+register_provider(
+    "groq",
+    PROVIDERS["groq"],
+    model_modes={
+        "openai/gpt-oss-120b": "JSON",
+        "qwen/qwen3-32b": "JSON",
+    },
+)
+register_provider(
+    "openai",
+    PROVIDERS["openai"],
+    model_modes={
+        "gpt-4o-mini": "TOOLS",
+        "gpt-4o": "TOOLS",
+        "gpt-4.1-mini": "TOOLS",
+        "gpt-5-mini": "TOOLS",
+        "gpt-5-nano": "TOOLS",
+    },
+)
+
 API_ROOT = Path(__file__).resolve().parents[2]  # .../apps/api
 GOLDEN_DIR = API_ROOT / "tests/golden"
 JSONL_PATH = API_ROOT / "evals/extraction/results.jsonl"
@@ -56,39 +132,72 @@ FROZEN_TODAY = date(2026, 5, 10)
 START_TIME_TOLERANCE = timedelta(minutes=30)
 TOLERANCE_MIN = int(START_TIME_TOLERANCE.total_seconds() // 60)
 
-# Env var that gates each provider. Combos whose key is unset are skipped.
-PROVIDER_ENV = {"openai": "OPENAI_API_KEY", "groq": "GROQ_API_KEY"}
+# Env var that gates each provider (derived from the registry after the survey
+# candidates are registered above). Combos whose key is unset are skipped.
+PROVIDER_ENV = {name: cfg.api_key_env for name, cfg in PROVIDERS.items() if cfg.api_key_env}
 
 # USD per 1M tokens. Update as provider pricing changes — these drive the cost
 # column in the report. Unknown combos fall back to (0, 0) and print "n/a".
+#
+# Deprecated models are intentionally kept here: existing results.jsonl rows for
+# them still need a price to render in the eval viewer. The *active* sweep roster
+# is DEFAULT_MATRIX / VISION_CAPABLE below, not this table.
 PRICING_USD_PER_M: dict[tuple[str, str], tuple[float, float]] = {
     ("openai", "gpt-4o-mini"): (0.15, 0.60),
     ("openai", "gpt-4o"): (2.50, 10.00),
-    ("groq", "llama-3.3-70b-versatile"): (0.59, 0.79),
-    ("groq", "llama-3.1-8b-instant"): (0.05, 0.08),
-    # Groq mid-tier candidates evaluated 2026-05-10. Verify against
-    # https://groq.com/pricing before quoting these in production.
-    ("groq", "meta-llama/llama-4-scout-17b-16e-instruct"): (0.11, 0.34),
-    ("groq", "openai/gpt-oss-20b"): (0.10, 0.50),
-    ("groq", "openai/gpt-oss-120b"): (0.15, 0.75),
+    # Groq gpt-oss tier — fast/cheap text-extraction candidates. Verified
+    # against https://groq.com/pricing on 2026-07-18.
+    ("groq", "openai/gpt-oss-20b"): (0.075, 0.30),
+    ("groq", "openai/gpt-oss-120b"): (0.15, 0.60),
     ("groq", "qwen/qwen3-32b"): (0.29, 0.59),
+    # Scout-replacement survey (2026-07-18). Verified against
+    # https://groq.com/pricing: $0.60/M in, $3.00/M out.
+    ("groq", "qwen/qwen3.6-27b"): (0.60, 3.00),
+    ("openai", "gpt-4.1-mini"): (0.40, 1.60),
+    ("openai", "gpt-5-mini"): (0.25, 2.00),
+    # OpenAI nano vision candidates (2026-07-18). Both accept image input and
+    # are the cheapest in their class. Verified against
+    # https://developers.openai.com/api/docs/pricing.
+    ("openai", "gpt-5-nano"): (0.05, 0.40),
+    ("openai", "gpt-5.4-nano"): (0.20, 1.25),
+    # Google Gemini vision candidates. Prices verified against
+    # https://ai.google.dev/gemini-api/docs/pricing on 2026-07-18.
+    # gemini-2.5-flash-lite is the cheapest but shuts down 2026-10-16;
+    # gemini-3.1-flash-lite is the GA, durable Scout-class pick.
+    ("google", "gemini-2.5-flash-lite"): (0.10, 0.40),
+    ("google", "gemini-3.1-flash-lite"): (0.25, 1.50),
+    ("google", "gemini-3-flash-preview"): (0.50, 3.00),
+    # Google's configured smart_model (extraction.py). Verified against
+    # https://ai.google.dev/gemini-api/docs/pricing: $1.50/M in, $9.00/M out.
+    ("google", "gemini-3.5-flash"): (1.50, 9.00),
+    # OpenRouter free tier — $0 tokens (subject to daily/per-minute rate limits).
+    ("openrouter", "google/gemma-4-26b-a4b-it:free"): (0.0, 0.0),
 }
 
+# ---------------------------------------------------------------------------
+# Active model roster (2026-07-19)
+# ---------------------------------------------------------------------------
+# Only these viable candidates run in the default sweep. Everything else is
+# deprecated: its PRICING_USD_PER_M entry and any existing results.jsonl rows
+# stay for historical comparison, but it's no longer swept. Pass a deprecated
+# combo explicitly via --models to re-measure it.
+#
+# Per provider: OpenAI gpt-5.4-nano (text+vision), Groq gpt-oss-20b (text) /
+# qwen3.6-27b (vision), Google gemini-3.1-flash-lite (text+vision).
 DEFAULT_MATRIX: list[tuple[str, str]] = [
-    ("openai", "gpt-4o-mini"),
-    ("openai", "gpt-4o"),
-    ("groq", "llama-3.3-70b-versatile"),
-    ("groq", "llama-3.1-8b-instant"),
+    ("openai", "gpt-5.4-nano"),
+    ("groq", "openai/gpt-oss-20b"),
+    ("google", "gemini-3.1-flash-lite"),
+    ("groq", "qwen/qwen3.6-27b"),
 ]
 
-# Combos allowed to receive image cases; everything else skips them (a text
-# model erroring on an image row is noise, not signal).
+# Combos allowed to receive image (visual+text) cases; everything else skips them
+# (a text model erroring on an image row is noise, not signal). Groq accepts
+# OpenAI-style image_url content parts under JSON mode.
 VISION_CAPABLE: set[tuple[str, str]] = {
-    ("openai", "gpt-4o"),
-    ("openai", "gpt-4o-mini"),
-    # Llama-4 Scout is natively multimodal; Groq accepts OpenAI-style
-    # image_url content parts under JSON mode (their docs, 2026-06).
-    ("groq", "meta-llama/llama-4-scout-17b-16e-instruct"),
+    ("openai", "gpt-5.4-nano"),
+    ("groq", "qwen/qwen3.6-27b"),
+    ("google", "gemini-3.1-flash-lite"),
 }
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
@@ -173,10 +282,41 @@ def load_cases() -> list[GoldenCase]:
     return cases
 
 
+# Mirror the client-side uploader (apps/web/src/lib/image-downscale.ts) so image
+# cases send the same payload production does: long edge capped at 1568px,
+# re-encoded to JPEG q0.8, transparency flattened onto white. Feeding raw golden
+# files instead inflates tokens/cost/latency and can trip rate limits production
+# would never hit.
+IMAGE_MAX_LONG_EDGE = 1568
+IMAGE_JPEG_QUALITY = 80
+
+
 def image_to_data_url(path: Path) -> str:
-    subtype = "jpeg" if path.suffix.lower() in {".jpg", ".jpeg"} else path.suffix.lower()[1:]
-    encoded = base64.b64encode(path.read_bytes()).decode()
-    return f"data:image/{subtype};base64,{encoded}"
+    from PIL import Image
+
+    # Copy out of the context manager so the source file handle is closed
+    # promptly — this helper runs once per image case in the eval loop.
+    with Image.open(path) as source:
+        im: Image.Image = source.copy()
+    scale = min(1.0, IMAGE_MAX_LONG_EDGE / max(im.width, im.height))
+    if scale < 1.0:
+        im = im.resize(
+            (max(1, round(im.width * scale)), max(1, round(im.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+    # JPEG has no alpha: flatten transparency onto white, matching the canvas fill.
+    if im.mode in ("RGBA", "LA", "P"):
+        background = Image.new("RGB", im.size, (255, 255, 255))
+        rgba = im.convert("RGBA")
+        background.paste(rgba, mask=rgba.split()[-1])
+        im = background
+    else:
+        im = im.convert("RGB")
+
+    buffer = io.BytesIO()
+    im.save(buffer, "JPEG", quality=IMAGE_JPEG_QUALITY)
+    encoded = base64.b64encode(buffer.getvalue()).decode()
+    return f"data:image/jpeg;base64,{encoded}"
 
 
 # ---------------------------------------------------------------------------
@@ -299,15 +439,15 @@ async def run_case(
     if case.image_path is not None and prompt_version == "v3":
         prompt_version = VISION_VERSION
     try:
-        response, details = await extract_event(
+        # The eval pins one provider/model/prompt combo per run and wants each to
+        # answer for itself, so build the config with escalate=False and call the
+        # executor directly — no escalation, no fake seam, no settings fallback.
+        config = resolve_config(provider, model, mode, prompt_version, escalate=False)
+        response, details = await run_extraction(
             case.raw_text,
+            image_to_data_url(case.image_path) if case.image_path else None,
+            config,
             today=FROZEN_TODAY,
-            image_data_url=image_to_data_url(case.image_path) if case.image_path else None,
-            provider=provider,
-            model=model,
-            prompt_version=prompt_version,
-            mode=mode,
-            return_details=True,
         )
         return CaseResult(
             case_id=case.case_id,
@@ -460,7 +600,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--models",
         default=None,
-        help="Comma-separated provider/model list. Default: all four (openai/gpt-4o-mini, openai/gpt-4o, groq/llama-3.3-70b-versatile, groq/llama-3.1-8b-instant).",
+        help="Comma-separated provider/model list. Default: the active roster — "
+        "openai/gpt-5.4-nano, groq/openai/gpt-oss-20b, google/gemini-3.1-flash-lite (text) "
+        "plus groq/qwen/qwen3.6-27b (vision).",
     )
     parser.add_argument(
         "--prompt-versions",

@@ -158,8 +158,8 @@ export default function PrivacyPage() {
             </li>
           </ul>
           <p className="text-ink-soft">
-            Product analytics (which features are used, so we can fix problems)
-            run on our own Supabase database — no third-party analytics service.
+            We don’t run product analytics or use any third-party analytics
+            service, and we set no analytics or advertising cookies.
           </p>
         </section>
 

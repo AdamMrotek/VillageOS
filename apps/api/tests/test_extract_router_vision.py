@@ -1,7 +1,6 @@
-"""Router-level vision behavior (ADR-019): image requests ride the same A/B
-flag as text — the assigned arm's stack serves both paths. With the experiment
-disabled (assignment passthrough) vision falls back to the pinned default
-(openai/gpt-4o) so prod behaviour with the experiment disabled is unchanged."""
+"""Router-level vision behavior: an image request pins the configured default
+provider's vision model (no escalation), while a text request flows through with
+no provider/model override (the env-default production path)."""
 
 from datetime import datetime
 from types import SimpleNamespace
@@ -14,7 +13,6 @@ import app.routers.extract as extract_router
 from app.schemas.events import ExtractRequest, ExtractResponse, ParentEvent
 
 IMAGE_URL = "data:image/jpeg;base64,aGVsbG8="
-SCOUT = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 
 def _response() -> ExtractResponse:
@@ -32,27 +30,16 @@ def _response() -> ExtractResponse:
 
 @pytest.fixture
 def harness(monkeypatch):
-    """Stub everything around the router: quota, extraction, experiment."""
-    calls = SimpleNamespace(
-        extract_kwargs=None,
-        assign_args=None,
-        assignment=("control", None, None),
-        captures=[],
-    )
+    """Stub the quota + extraction seams around the router."""
+    calls = SimpleNamespace(extract_kwargs=None)
 
     async def fake_extract_event(raw_text, **kwargs):
         calls.extract_kwargs = {"raw_text": raw_text, **kwargs}
         return _response()
 
-    def fake_assign(user_id, *, vision=False):
-        calls.assign_args = {"user_id": user_id, "vision": vision}
-        return calls.assignment
-
     monkeypatch.setattr(extract_router, "get_admin_db", lambda: object())
     monkeypatch.setattr(extract_router, "bump_usage", lambda db, uid: 1)
     monkeypatch.setattr(extract_router, "extract_event", fake_extract_event)
-    monkeypatch.setattr(extract_router, "assign_extraction_variant", fake_assign)
-    monkeypatch.setattr(extract_router, "capture_assignment", lambda *a: calls.captures.append(a))
     return calls
 
 
@@ -72,30 +59,14 @@ USER = {"sub": "u1"}
 
 
 class TestVisionRequest:
-    async def test_disabled_experiment_falls_back_to_pinned_vision_model(self, harness):
+    async def test_image_pins_default_vision_model(self, harness):
         body = ExtractRequest(image_data_url=IMAGE_URL)
-        response = await extract_router.extract(body, _request(), USER)
+        await extract_router.extract(body, _request(), USER)
 
-        assert harness.assign_args == {"user_id": "u1", "vision": True}
-        assert harness.extract_kwargs["provider"] == extract_router.VISION_PROVIDER
-        assert harness.extract_kwargs["model"] == extract_router.get_vision_model()
+        default_provider, default_vision_model = extract_router.get_vision_defaults()
+        assert harness.extract_kwargs["provider"] == default_provider
+        assert harness.extract_kwargs["model"] == default_vision_model
         assert harness.extract_kwargs["image_data_url"] == IMAGE_URL
-        # Exposure + experiment info report the actual routing after fallback.
-        assert harness.captures == [("u1", "control", "openai", "gpt-4o")]
-        assert response.experiment is not None
-        assert response.experiment.variant == "control"
-
-    async def test_assigned_arm_drives_vision_model(self, harness):
-        harness.assignment = ("treatment", "groq", SCOUT)
-        body = ExtractRequest(image_data_url=IMAGE_URL)
-        response = await extract_router.extract(body, _request(), USER)
-
-        assert harness.extract_kwargs["provider"] == "groq"
-        assert harness.extract_kwargs["model"] == SCOUT
-        assert harness.captures == [("u1", "treatment", "groq", SCOUT)]
-        assert response.experiment is not None
-        assert response.experiment.variant == "treatment"
-        assert response.experiment.model == SCOUT
 
     async def test_caption_forwarded_alongside_image(self, harness):
         body = ExtractRequest(raw_text="for Mia", image_data_url=IMAGE_URL)
@@ -104,17 +75,13 @@ class TestVisionRequest:
         assert harness.extract_kwargs["image_data_url"] == IMAGE_URL
 
 
-class TestTextRequestUnchanged:
-    async def test_assignment_and_exposure_still_fire(self, harness):
+class TestTextRequest:
+    async def test_text_flows_through_without_overrides(self, harness):
         body = ExtractRequest(raw_text="Bake sale Friday 3pm")
-        response = await extract_router.extract(body, _request(), USER)
+        await extract_router.extract(body, _request(), USER)
 
-        assert harness.assign_args == {"user_id": "u1", "vision": False}
-        assert harness.captures == [("u1", "control", None, None)]
-        assert response.experiment is not None
-        assert response.experiment.variant == "control"
-        # No overrides on the control arm: provider/model flow through as None
-        # (model falls back to the tier policy, which is None for free).
+        # No overrides on the text path: provider/model flow through as None so
+        # extract_event runs the env default with low-confidence escalation.
         assert harness.extract_kwargs["provider"] is None
         assert harness.extract_kwargs["model"] is None
         assert harness.extract_kwargs["image_data_url"] is None

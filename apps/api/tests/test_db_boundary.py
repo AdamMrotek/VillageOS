@@ -30,8 +30,6 @@ APP_DIR = Path(__file__).resolve().parents[1] / "app"
 # app/; "path::function" scopes the exception to one top-level function.
 ADMIN_DB_ALLOWLIST = {
     "core/db.py",  # defines it
-    "core/experiments.py::_fetch_config",  # experiments config lives in a service-role table
-    "core/experiments.py::capture_event",  # analytics writes (service-role table)
     "routers/account.py::delete_account",  # deleting an auth.users row requires the admin API
     "routers/admin.py",  # cross-user reads are the point; every route gated by require_admin
     "routers/extract.py::extract",  # usage_counters has no user RLS policy by design (ADR-017)
@@ -45,9 +43,6 @@ CLIENT_FACTORY_ALLOWLIST = {"core/db.py"}
 SECRET_KEY_ALLOWLIST = {
     "core/db.py",  # builds the service-role client from it
     "core/config.py",  # defines the setting
-    # Presence checks only ("is admin db configured?"); never read the value out.
-    "core/experiments.py::_fetch_config",
-    "core/experiments.py::capture_event",
 }
 
 

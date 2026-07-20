@@ -16,9 +16,9 @@ phone camera / file picker
 ```
 
 The image travels **inline as a base64 data URL and is never persisted** — no
-S3, no CDN, redacted from DEBUG logs (`_redact_messages`), never written to
-analytics. Same `instructor` contract, quota metering, and draft-review UI as
-text extraction.
+S3, no CDN, never logged (the `extraction_prompt` DEBUG log records the system
+prompt and user text only, never the base64 image). Same `instructor` contract,
+quota metering, and draft-review UI as text extraction.
 
 ## Decisions (rationale in ADR-018)
 
@@ -26,8 +26,8 @@ text extraction.
 |---|----------|-----------|
 | 1 | Vision-native structured output, **not** OCR-then-parse | Layout carries meaning (dates in headers, prices in small print); one call, one error mode; reuses the whole schema/eval machinery |
 | 2 | Inline base64, **no S3 / no retention** | Photos of children's school comms: not storing them deletes the retention problem; client downscale keeps the body ≲500 KB, far under Lambda's 6 MB |
-| 3 | ~~Pinned `openai/gpt-4o`~~ → **superseded by ADR-019**: the assigned arm's stack drives the vision model; the gpt-4o pin survives only as the disabled-experiment fallback | Groq JSON mode confirmed working with content-part messages (eval 2026-06-12), removing the original blocker |
-| 4 | ~~Vision bypasses the move-1 A/B~~ → **superseded by ADR-019**: arms are now provider stacks (control: OpenAI gpt-4o-mini text + gpt-4o vision; treatment: Groq Scout both paths), so vision rides the same flag | The funnel's `input_type` tag + per-field edit rates turn real traffic into the real-photo vision eval, with Scout risk contained to the treatment arm |
+| 3 | An image request pins the **default provider's vision model** (`get_vision_defaults`), no low-confidence escalation | One pinned model per image call; keeps vision on the same provider as the text default without a per-request model choice |
+| 4 | ~~Vision rode the extraction A/B~~ → **the A/B is removed (ADR-025)**: there are no arms; text uses the env default, an image uses the provider's vision model | The experiment stack (assignment, arms, funnel analytics) was deleted when the model roster changed; extraction behaviour matches the always-disabled-experiment path |
 | 5 | Prompt `v3v` = v3 + composed vision addendum | One source of truth, honest version label in logs/eval rows. Date table stays — leaflets print dates without years |
 | 6 | `detail: "high"`, pinned | Leaflet value *is* the small print; `low` is one 512px thumbnail. ~765–1100 image tokens ≈ $0.002/call |
 | 7 | Caption exempt from the 10-char floor | "for Mia" + image is a legitimate request; text-only keeps the floor |
@@ -56,7 +56,7 @@ WhatsApp and no-year cases but dropped an action-item keyword on the leaflet
 mini's image-token multiplier (~27.7k prompt tokens vs gpt-4o's ~3k) erodes
 its price edge — $0.0042 vs $0.0083 per extraction, ~½ rather than the ~16×
 text-path saving. Results are filterable under the **Vision** tab on the admin
-app's `/evals` page.
+app's eval dashboard.
 
 **Groq Scout vision (run 2026-06-12)**: the blocker behind decision #3 is
 cleared — Groq's JSON mode **does** accept OpenAI-style `image_url` content
@@ -100,18 +100,15 @@ reality. The follow-up eval should:
   with image input.
 - **Per-field readout** — which fields degrade first as image quality drops
   (hypothesis: action-item small print before title/date).
-- **Online**: the `extraction_shown`/`extraction_accepted` funnel already tags
-  `input_type`, so once real traffic exists, the per-field edit-rate metric
-  from move 1 reads vision quality for free.
 
 ## File map
 
 | Concern | Where |
 |---------|-------|
 | Vision prompt (`v3v`) | `app/prompts/extraction/v3_vision.py` |
-| Multimodal call, redaction, telemetry | `app/services/extraction.py` |
+| Multimodal call, telemetry | `app/services/extraction.py` |
 | Request schema (`image_data_url` rules) | `app/schemas/events.py` |
-| A/B bypass | `app/routers/extract.py` |
+| Vision default (provider + model) | `app/routers/extract.py` |
 | Client downscale | `apps/web/src/lib/image-downscale.ts` |
 | Upload UI | `apps/web/src/app/(app)/events/new/page.tsx` |
 | Golden images + generator | `tests/golden/img_0*.{jpg,png,json}`, `scripts/generate_golden_images.py` |

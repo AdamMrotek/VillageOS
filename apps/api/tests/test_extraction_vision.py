@@ -1,9 +1,8 @@
 """Vision path through extract_event: multimodal message construction, prompt
-version defaulting, telemetry, and image redaction — with the LLM client faked."""
+version defaulting, and telemetry — with the LLM client faked."""
 
 from datetime import date
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -106,25 +105,3 @@ class TestTelemetry:
         _, details, _ = await _run(fake_llm, raw_text="Bake sale Friday 3pm")
         assert details.input_type == "text"
         assert details.image_bytes is None
-
-
-class TestRedaction:
-    def test_image_payload_replaced_text_untouched(self):
-        # list[Any]: the test exercises the runtime dict shape, not the OpenAI
-        # SDK's TypedDict unions that _redact_messages is annotated with.
-        messages: list[Any] = [
-            {"role": "system", "content": "sys prompt"},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": IMAGE_URL, "detail": "high"}},
-                    {"type": "text", "text": "caption"},
-                ],
-            },
-        ]
-        redacted = extraction._redact_messages(messages)
-        assert redacted[0] == {"role": "system", "content": "sys prompt"}
-        assert redacted[1]["content"][0]["image_url"] == f"<redacted image, {len(IMAGE_URL)} chars>"
-        assert redacted[1]["content"][1] == {"type": "text", "text": "caption"}
-        # The original (sent to the LLM) must keep the real payload.
-        assert messages[1]["content"][0]["image_url"]["url"] == IMAGE_URL

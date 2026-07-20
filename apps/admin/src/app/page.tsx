@@ -1,309 +1,192 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { Bar, BarChart, CartesianGrid, LabelList, XAxis, YAxis } from "recharts";
+import { useMemo, useState } from "react";
+import type { EvalRow, GoldenCase, RunGroup } from "@/lib/evals/types";
 import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@repo/ui/components/chart";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
-import { Button } from "@repo/ui/components/button";
-import { createClient } from "@repo/ui/lib/supabase";
-import {
-  ApiError,
-  NotAuthenticated,
-  adminGet,
-  adminPatch,
-  type ExperimentConfig,
-  type ExtractionReadout,
-} from "@/lib/api";
+  groupByRun,
+  filterRunsByKind,
+  type EvalKind,
+} from "@/lib/evals/results";
+import { RunCard } from "@/components/evals/RunCard";
+import { GoldenCaseCard } from "@/components/evals/GoldenCaseCard";
+import { GateScreen } from "@/components/GateScreen";
+import { useAdminResource } from "@/lib/use-admin-resource";
 
-const outcomesConfig = {
-  shown: { label: "Shown", color: "hsl(var(--chart-3))" },
-  accepted: { label: "Accepted", color: "hsl(var(--chart-1))" },
-} satisfies ChartConfig;
+type View = "results" | "golden";
 
-const fieldEditsConfig = {
-  control_pct: { label: "control", color: "hsl(var(--chart-1))" },
-  treatment_pct: { label: "treatment", color: "hsl(var(--chart-2))" },
-} satisfies ChartConfig;
+const KIND_TABS: { kind: EvalKind; label: string }[] = [
+  { kind: "all", label: "All" },
+  { kind: "text", label: "Text" },
+  { kind: "vision", label: "Vision" },
+];
 
-type State =
-  | { status: "loading" }
-  | { status: "forbidden" }
-  | { status: "error"; message: string }
-  | { status: "ready"; data: ExtractionReadout };
-
-/** One grouped (side-by-side) bar card. Each key in `config` becomes a bar
- *  series; recharts handles the gridlines, axis, tooltip and legend so there's
- *  no hand-rolled chart geometry to maintain. */
-function GroupedBarCard({
-  title,
-  description,
-  data,
-  xKey,
-  config,
-  suffix = "",
-}: {
-  title: string;
-  description: string;
-  data: Record<string, unknown>[];
-  xKey: string;
-  config: ChartConfig;
-  suffix?: string;
-}) {
-  const keys = Object.keys(config);
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {data.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No data yet.</p>
-        ) : (
-          <ChartContainer config={config} className="h-[280px] w-full">
-            <BarChart data={data} margin={{ top: 24 }}>
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey={xKey}
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                width={40}
-                tickFormatter={(v) => `${v}${suffix}`}
-              />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <ChartLegend content={<ChartLegendContent />} />
-              {keys.map((key) => (
-                <Bar key={key} dataKey={key} fill={`var(--color-${key})`} radius={4}>
-                  <LabelList
-                    position="top"
-                    fontSize={11}
-                    className="fill-foreground"
-                    formatter={(value) => (value == null ? "" : `${value}${suffix}`)}
-                  />
-                </Bar>
-              ))}
-            </BarChart>
-          </ChartContainer>
-        )}
-      </CardContent>
-    </Card>
+export default function EvalsPage() {
+  // Results gate the page (the primary admin auth check); the golden set loads
+  // alongside and surfaces its own loading/error state inside its view.
+  const resultsState = useAdminResource<{ rows: EvalRow[] }>(
+    "/api/admin/evals/results",
   );
-}
+  const goldenState = useAdminResource<{ cases: GoldenCase[] }>(
+    "/api/admin/evals/golden",
+  );
 
-/** Enable/disable card for the extraction A/B. Owns its own fetch + update so
- *  the readout above it stays untouched; by the time it renders the parent has
- *  already cleared the auth/forbidden gates, so failures here are surfaced
- *  inline rather than redirecting. */
-function ExperimentToggle() {
-  const [config, setConfig] = useState<ExperimentConfig | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const [view, setView] = useState<View>("results");
+  const [kind, setKind] = useState<EvalKind>("all");
 
-  useEffect(() => {
-    let cancelled = false;
-    adminGet<ExperimentConfig>("/api/admin/experiments/extraction/config")
-      .then((c) => !cancelled && setConfig(c))
-      .catch((e) => {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : "Failed to load config");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const runs: RunGroup[] | null = useMemo(
+    () =>
+      resultsState.status === "ready"
+        ? groupByRun(resultsState.data.rows)
+        : null,
+    [resultsState],
+  );
+  const visible = useMemo(
+    () => (runs ? filterRunsByKind(runs, kind) : null),
+    [runs, kind],
+  );
 
-  async function toggle() {
-    if (!config || pending) return;
-    const next = !config.enabled;
-    setPending(true);
-    setError(null);
-    setConfig({ ...config, enabled: next }); // optimistic
-    try {
-      const updated = await adminPatch<ExperimentConfig>(
-        "/api/admin/experiments/extraction/config",
-        { enabled: next },
-      );
-      setConfig(updated);
-    } catch (e) {
-      setConfig({ ...config, enabled: !next }); // revert
-      setError(e instanceof Error ? e.message : "Failed to update");
-    } finally {
-      setPending(false);
-    }
-  }
+  if (resultsState.status !== "ready") return <GateScreen state={resultsState} />;
+
+  const goldenCount =
+    goldenState.status === "ready" ? goldenState.data.cases.length : null;
 
   return (
-    <div className="mb-6 flex items-center justify-between gap-4 rounded-lg border px-4 py-3">
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">
-          Extraction A/B experiment
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {error
-            ? error
-            : !config
-              ? "Loading…"
-              : config.enabled
-                ? "Enabled — traffic is split across arms."
-                : "Disabled — every user gets the control arm."}
-        </p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={config?.enabled ?? false}
-        aria-label="Toggle extraction experiment"
-        disabled={!config || pending}
-        onClick={toggle}
-        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-          config?.enabled ? "bg-primary" : "bg-muted-foreground/30"
-        }`}
-      >
-        <span
-          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-            config?.enabled ? "translate-x-5" : "translate-x-0.5"
-          }`}
-        />
-      </button>
+    <div className="mx-auto max-w-[1200px] px-6 pb-20 pt-8">
+      <header className="flex flex-wrap items-baseline justify-between gap-6 border-b-2 border-ink pb-4 mb-2">
+        <h1 className="text-hero">Extraction eval</h1>
+        <div className="text-mono text-eyebrow">
+          {view === "results"
+            ? visible
+              ? `${visible.length} run${visible.length === 1 ? "" : "s"}`
+              : "loading…"
+            : goldenCount === null
+              ? "loading…"
+              : `${goldenCount} case${goldenCount === 1 ? "" : "s"}`}
+        </div>
+      </header>
+
+      {/* Results vs Golden set */}
+      <nav className="mt-5 flex gap-1 rounded-lg border border-hairline bg-surface p-1 w-fit">
+        {(
+          [
+            ["results", "Results"],
+            ["golden", "Golden set"],
+          ] as [View, string][]
+        ).map(([v, label]) => {
+          const active = v === view;
+          return (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`rounded-md px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${
+                active
+                  ? "bg-ink text-surface"
+                  : "text-ink-mute hover:bg-surface-alt hover:text-ink"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </nav>
+
+      {view === "results" ? (
+        <>
+          {runs && (
+            <nav className="mt-4 flex gap-1 rounded-lg border border-hairline bg-surface p-1 w-fit">
+              {KIND_TABS.map((tab) => {
+                const count = filterRunsByKind(runs, tab.kind).length;
+                const active = tab.kind === kind;
+                return (
+                  <button
+                    key={tab.kind}
+                    onClick={() => setKind(tab.kind)}
+                    className={`rounded-md px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] transition-colors ${
+                      active
+                        ? "bg-ink text-surface"
+                        : "text-ink-mute hover:bg-surface-alt hover:text-ink"
+                    }`}
+                  >
+                    {tab.label}
+                    <span
+                      className={`ml-1.5 text-mono ${active ? "text-surface/70" : "text-ink-mute/70"}`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          )}
+
+          {visible && visible.length === 0 && (
+            <div className="mt-8 rounded-xl border border-hairline bg-surface px-6 py-8 text-center">
+              <p className="text-ink">
+                {kind === "vision"
+                  ? "No vision runs yet. Run"
+                  : "No eval runs yet. Run"}{" "}
+                <code className="rounded bg-surface-alt px-2 py-0.5 text-mono text-sm">
+                  python -m evals.extraction.run
+                  {kind === "vision"
+                    ? " --cases img_07_leaflet,img_08_whatsapp,img_09_photo_no_year"
+                    : ""}
+                </code>{" "}
+                from <code className="text-mono">apps/api</code> to populate{" "}
+                <code className="text-mono">results.jsonl</code>.
+              </p>
+            </div>
+          )}
+
+          {visible && visible.length > 0 && (
+            <div className="mt-8 flex flex-col gap-7">
+              {visible.map((run, i) => (
+                <RunCard key={run.run_id} run={run} isLatest={i === 0} />
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        <GoldenSetView state={goldenState} />
+      )}
     </div>
   );
 }
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const [state, setState] = useState<State>({ status: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await adminGet<ExtractionReadout>(
-          "/api/admin/experiments/extraction",
-        );
-        if (!cancelled) setState({ status: "ready", data });
-      } catch (e) {
-        if (cancelled) return;
-        if (e instanceof NotAuthenticated) {
-          router.replace("/login");
-        } else if (e instanceof ApiError && e.status === 403) {
-          setState({ status: "forbidden" });
-        } else {
-          setState({
-            status: "error",
-            message: e instanceof Error ? e.message : "Failed to load",
-          });
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [router]);
-
-  async function signOut() {
-    await createClient().auth.signOut();
-    router.replace("/login");
-  }
-
+function GoldenSetView({
+  state,
+}: {
+  state: ReturnType<typeof useAdminResource<{ cases: GoldenCase[] }>>;
+}) {
   if (state.status === "loading") {
-    return (
-      <main className="mx-auto flex min-h-svh max-w-3xl items-center justify-center px-5">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </main>
-    );
+    return <p className="mt-8 text-sm text-muted-foreground">Loading golden set…</p>;
   }
-
   if (state.status === "forbidden") {
-    return (
-      <main className="mx-auto flex min-h-svh max-w-3xl flex-col items-center justify-center gap-2 px-5 text-center">
-        <h1 className="text-xl font-semibold">Not authorised</h1>
-        <p className="text-sm text-muted-foreground">
-          This account isn’t an admin.
-        </p>
-        <Button variant="link" onClick={signOut}>
-          Sign out
-        </Button>
-      </main>
-    );
+    return <p className="mt-8 text-sm text-muted-foreground">Not authorised.</p>;
   }
-
   if (state.status === "error") {
-    return (
-      <main className="mx-auto flex min-h-svh max-w-3xl flex-col items-center justify-center gap-2 px-5 text-center">
-        <h1 className="text-xl font-semibold">Something went wrong</h1>
-        <p className="text-sm text-destructive">{state.message}</p>
-      </main>
-    );
+    return <p className="mt-8 text-sm text-destructive">{state.message}</p>;
   }
 
-  const { outcomes, field_edits } = state.data;
-
+  const { cases } = state.data;
   return (
-    <main className="mx-auto max-w-3xl px-5 py-10">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Extraction A/B — live charts
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          control = OpenAI stack · treatment = Groq / Llama-4 Scout
-        </p>
-      </header>
-
-      <ExperimentToggle />
-
-      <div className="flex flex-col gap-6">
-        <GroupedBarCard
-          title="Shown vs accepted, per model"
-          description="How many drafts each arm showed vs how many the user kept. The gap is drop-off; (unassigned) is a health check, not an arm."
-          data={outcomes as unknown as Record<string, unknown>[]}
-          xKey="model"
-          config={outcomesConfig}
-        />
-
-        <GroupedBarCard
-          title="Field edit rate, per model"
-          description="Of the drafts each arm got accepted, what % needed this field fixed? (No start_date field — the date lives in start_time.)"
-          data={field_edits as unknown as Record<string, unknown>[]}
-          xKey="field"
-          config={fieldEditsConfig}
-          suffix="%"
-        />
-
-        {(outcomes.length === 0 || field_edits.length === 0) && (
-          <p className="text-sm text-muted-foreground">
-            No data yet — the experiment must be enabled (the{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-[0.85em]">
-              experiments
-            </code>{" "}
-            row) and events captured before charts populate.
-          </p>
-        )}
-
-        <div className="rounded-lg border border-warm/40 bg-warm/5 px-4 py-3 text-sm text-muted-foreground">
-          <b className="text-foreground">Read direction, not significance.</b> Low
-          N — several bars can be 1–3 events. These show <i>where</i> to look, not
-          a verdict.
+    <>
+      <p className="mt-4 text-meta max-w-2xl">
+        The cases the eval is graded against (
+        <code className="text-mono">apps/api/tests/golden</code>). Each shows the
+        input text the model sees and the partial expected result — only the
+        fields the dataset asserts on.
+      </p>
+      {cases.length === 0 ? (
+        <div className="mt-8 rounded-xl border border-hairline bg-surface px-6 py-8 text-center text-ink">
+          No golden cases found.
         </div>
-      </div>
-    </main>
+      ) : (
+        <div className="mt-6 rounded-2xl border border-hairline bg-surface divide-y divide-hairline overflow-hidden">
+          {cases.map((c) => (
+            <GoldenCaseCard key={c.case_id} c={c} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }

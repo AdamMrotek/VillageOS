@@ -3,17 +3,11 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { track } from "@/lib/analytics";
-import { diffExtractionFields } from "@/lib/extraction-diff";
 import { ApiError } from "@/lib/api-fetch";
 import { createClient } from "@repo/ui/lib/supabase";
 import { useIsDemo } from "@/lib/hooks/use-is-demo";
 import { useCreateEvent, useExtractEvent } from "@/lib/queries/events";
-import type {
-  ExperimentInfo,
-  ExtractionInputType,
-  ParentEvent,
-} from "@/lib/types/events";
+import type { ExtractionInputType, ParentEvent } from "@/lib/types/events";
 import EventForm from "./event-form";
 import ExtractMessage, { type CaptureImage } from "./extract-message";
 import ExtractingDialog from "./extracting-dialog";
@@ -24,12 +18,10 @@ import ExtractingDialog from "./extracting-dialog";
 // dialog; "review" widens the form column around the extracted draft.
 type Phase = "capture" | "extracting" | "review";
 
-// The draft + assigned arm from the last extraction, kept together so the
-// create handler can diff what the user submitted against what the model
-// produced (the per-field edit-rate metric). Null in manual entry.
+// The draft from the last extraction, kept so the review form can seed its
+// fields from it. Null in manual entry.
 type Extraction = {
   draft: ParentEvent;
-  experiment: ExperimentInfo | null;
   inputType: ExtractionInputType;
 };
 
@@ -59,11 +51,6 @@ export default function EventExtraction() {
   // Cancelling an in-flight extract can't abort the request, so guard the
   // success/error handlers from yanking the user back out of "capture".
   const cancelledRef = useRef(false);
-
-  // Re-extract counter for the current review session: a 2nd+ extract before
-  // the draft is created or discarded signals dissatisfaction with draft 1.
-  // Reset on create/discard so each accepted/abandoned draft starts fresh.
-  const attemptRef = useRef(0);
 
   const [phase, setPhase] = useState<Phase>("capture");
   const [rawText, setRawText] = useState("");
@@ -99,7 +86,6 @@ export default function EventExtraction() {
     }
     const inputType: ExtractionInputType = image ? (text ? "text+image" : "image") : "text";
     cancelledRef.current = false;
-    const attempt = (attemptRef.current += 1);
     setPhase("extracting");
     // Errors (incl. a 429 quota hit → sign-up CTA) also surface in
     // useExtractEvent's onError; here we only handle UI phase + success wiring.
@@ -108,19 +94,10 @@ export default function EventExtraction() {
       {
         onSuccess: (res) => {
           if (cancelledRef.current) return;
-          // Exposure: the draft is now on screen. Stash it (pre-edit) + the
-          // arm so the create handler can compute the edit diff against it.
-          setExtraction({ draft: res.event, experiment: res.experiment, inputType });
+          // The draft is now on screen; stash it so the review form seeds from it.
+          setExtraction({ draft: res.event, inputType });
           setFormKey((k) => k + 1);
           setPhase("review");
-          track("extraction_shown", {
-            variant: res.experiment?.variant,
-            provider: res.experiment?.provider,
-            model: res.experiment?.model,
-            input_type: inputType,
-            attempt,
-            re_extract: attempt > 1,
-          });
         },
         onError: (error) => {
           if (cancelledRef.current) return;
@@ -154,17 +131,6 @@ export default function EventExtraction() {
   }
 
   function handleDiscard() {
-    // Strongest negative signal: the draft was thrown away, not fixed. Capture
-    // the assigned arm before clearing it.
-    if (extraction) {
-      track("extraction_discarded", {
-        variant: extraction.experiment?.variant,
-        provider: extraction.experiment?.provider,
-        model: extraction.experiment?.model,
-        input_type: extraction.inputType,
-      });
-    }
-    attemptRef.current = 0;
     setExtraction(null);
     // The form stays on screen in the capture phase — remount it so the
     // discarded draft's values don't linger in the empty disabled form.
@@ -175,20 +141,6 @@ export default function EventExtraction() {
   function handleCreate(submitted: ParentEvent) {
     createMutation.mutate(submitted, {
       onSuccess: () => {
-        // Conversion + primary metric: only when this event came from an
-        // extraction (manual entries have no draft to diff against).
-        if (extraction) {
-          const editedFields = diffExtractionFields(extraction.draft, submitted);
-          track("extraction_accepted", {
-            variant: extraction.experiment?.variant,
-            provider: extraction.experiment?.provider,
-            model: extraction.experiment?.model,
-            input_type: extraction.inputType,
-            n_edited: editedFields.length,
-            edited_fields: editedFields,
-          });
-        }
-        attemptRef.current = 0;
         router.push("/calendar");
         router.refresh();
       },
