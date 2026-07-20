@@ -6,7 +6,7 @@ import { Nav } from "@/components/Nav";
 
 export const metadata: Metadata = {
   title: "VillageOS Admin",
-  description: "Internal dashboards for VillageOS experiments and evals.",
+  description: "Internal dashboard for VillageOS extraction evals.",
 };
 
 export default function RootLayout({

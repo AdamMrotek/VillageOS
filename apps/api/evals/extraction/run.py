@@ -104,17 +104,25 @@ register_provider(
 # Extra groq/openai candidates beyond the two production models. They already
 # inherit their provider's default mode, but declaring them keeps the sweep's
 # model→mode map explicit alongside PRICING_USD_PER_M below.
-register_provider("groq", PROVIDERS["groq"], model_modes={
-    "openai/gpt-oss-120b": "JSON",
-    "qwen/qwen3-32b": "JSON",
-})
-register_provider("openai", PROVIDERS["openai"], model_modes={
-    "gpt-4o-mini": "TOOLS",
-    "gpt-4o": "TOOLS",
-    "gpt-4.1-mini": "TOOLS",
-    "gpt-5-mini": "TOOLS",
-    "gpt-5-nano": "TOOLS",
-})
+register_provider(
+    "groq",
+    PROVIDERS["groq"],
+    model_modes={
+        "openai/gpt-oss-120b": "JSON",
+        "qwen/qwen3-32b": "JSON",
+    },
+)
+register_provider(
+    "openai",
+    PROVIDERS["openai"],
+    model_modes={
+        "gpt-4o-mini": "TOOLS",
+        "gpt-4o": "TOOLS",
+        "gpt-4.1-mini": "TOOLS",
+        "gpt-5-mini": "TOOLS",
+        "gpt-5-nano": "TOOLS",
+    },
+)
 
 API_ROOT = Path(__file__).resolve().parents[2]  # .../apps/api
 GOLDEN_DIR = API_ROOT / "tests/golden"
@@ -126,9 +134,7 @@ TOLERANCE_MIN = int(START_TIME_TOLERANCE.total_seconds() // 60)
 
 # Env var that gates each provider (derived from the registry after the survey
 # candidates are registered above). Combos whose key is unset are skipped.
-PROVIDER_ENV = {
-    name: cfg.api_key_env for name, cfg in PROVIDERS.items() if cfg.api_key_env
-}
+PROVIDER_ENV = {name: cfg.api_key_env for name, cfg in PROVIDERS.items() if cfg.api_key_env}
 
 # USD per 1M tokens. Update as provider pricing changes — these drive the cost
 # column in the report. Unknown combos fall back to (0, 0) and print "n/a".

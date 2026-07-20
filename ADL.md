@@ -499,3 +499,22 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 - Canonical references: [E2e_test_strategy.md](E2e_test_strategy.md) (working plan + roadmap) and [TESTS.md](TESTS.md) (test-layer overview).
 
 ---
+
+## ADR-025 — Remove the extraction A/B experiment and its analytics
+
+**Decision:** Delete the self-hosted extraction experiment stack in its entirety (**supersedes ADR-023, ADR-019, and the vision A/B-bypass reasoning in ADR-018**). Gone: server-side variant assignment and the control/arm provider-stack model (`app/core/experiments.py`, `EXTRACTION_ARMS`), the funnel analytics that only ever fed the readout (`analytics_events`, `/api/analytics`, the web `track()` helper and per-field edit diff, `ExperimentInfo`), the admin Experiments dashboard + `/api/admin/experiments/*` endpoints, and the backing DB objects (`experiments` + `analytics_events` tables and the two `security_invoker` readout views). The admin app is now the offline eval viewer alone, served at its root.
+
+**Reasons:**
+- **The model roster moved out from under it.** The extraction models were updated (branch `feature/update-depricated-models-and-more-eval-tests`); the arm definitions and the seeded split referenced a configuration the app no longer runs, so the experiment was dead weight rather than a live test.
+- **Extraction behaviour is unchanged.** With the experiment disabled — which was production's state — text already ran the env-default provider with low-confidence escalation and images pinned the provider's vision model. The extract router now does exactly that directly, so removing the harness is behaviour-preserving.
+- **No orphaned analytics.** The funnel existed only to populate the readout views. With the readout gone, keeping `analytics_events` + `track()` would be collection with no consumer, so it goes too — which also simplifies the PECR posture to "no analytics at all" (see DATA_PROTECTION_CHECKLIST.md).
+
+**Impact:**
+- `supabase/migrations/20260720000001_drop_experiments.sql` — drops the two views and both tables (the un-merged `20260720000000_realign_experiment_arms.sql` was deleted; `20260626000000_self_host_experiments.sql` stays as history).
+- `apps/api` — deleted `app/core/experiments.py`, `app/routers/analytics.py`, `EXPERIMENTS.md`, `tests/test_experiments.py`; trimmed `main.py`, `llm_providers.py` (arms), `extract.py`, `schemas/events.py`, `admin.py`; rewrote `test_extract_router_vision.py` and `test_db_boundary.py`.
+- `apps/admin` — Evals moved to `/`, `/evals` route and the Experiments nav link removed, readout/config types dropped from `lib/api.ts`.
+- `apps/web` — deleted `lib/analytics.ts` and `lib/extraction-diff.ts`; stripped funnel tracking from `event-extraction.tsx` and `ExperimentInfo` from `types/events.ts`.
+
+**Future A/B tests:** if experimentation returns, it starts from a clean base — a new `experiments`-style table, a fresh assignment helper, and a readout — rather than reviving this stack.
+
+---

@@ -27,7 +27,7 @@ from app.schemas.events import ExtractResponse, ParentEvent
 from app.schemas.extraction_draft import ParentEventDraft
 from app.services.extraction_date import build_date_table, draft_to_event
 from app.services.extraction_fake import fake_extract_event
-from app.services.llm_providers import MODEL_MODES, PROVIDERS
+from app.services.llm_providers import MODEL_MODES, PROVIDERS, ModelSlot
 
 logger = logging.getLogger("villageos.extraction")
 
@@ -337,20 +337,22 @@ def resolve_config(
     prompt_version: str,
     *,
     escalate: bool,
+    default_slot: ModelSlot = ModelSlot.FAST,
 ) -> ExtractConfig:
     """Resolve optional overrides + settings into a finished ExtractConfig.
 
     Provider comes from the override or LLM_PROVIDER; the model from the override
-    or the provider's fast_model; the mode from the override, the model's
-    MODEL_MODES entry, or the provider default, in that order. `escalate=True`
-    wires escalate_to to the provider's smart_model (production default);
-    False leaves it off (eval and A/B arms).
+    or, absent one, the active provider's `default_slot` model (fast by default;
+    the caller's tier picks the slot). The mode comes from the override, the
+    model's MODEL_MODES entry, or the provider default, in that order.
+    `escalate=True` wires escalate_to to the provider's smart_model (production
+    default); False leaves it off (eval and A/B arms).
     """
     resolved_provider = (provider or get_settings().llm_provider).lower()
     if resolved_provider not in PROVIDERS:
         raise ValueError(f"Unsupported LLM provider: {resolved_provider}")
     cfg = PROVIDERS[resolved_provider]
-    resolved_model = model or cfg.fast_model
+    resolved_model = model or getattr(cfg, default_slot.value)
     return ExtractConfig(
         provider=resolved_provider,
         model=resolved_model,
@@ -374,6 +376,7 @@ async def extract_event(
     model: str | None = None,
     prompt_version: str | None = None,
     mode: str | None = None,
+    default_slot: ModelSlot = ModelSlot.FAST,
     return_details: Literal[False] = False,
     request_id: str | None = None,
 ) -> ExtractResponse: ...
@@ -389,6 +392,7 @@ async def extract_event(
     model: str | None = None,
     prompt_version: str | None = None,
     mode: str | None = None,
+    default_slot: ModelSlot = ModelSlot.FAST,
     return_details: Literal[True],
     request_id: str | None = None,
 ) -> tuple[ExtractResponse, ExtractionRunDetails]: ...
@@ -403,6 +407,7 @@ async def extract_event(
     model: str | None = None,
     prompt_version: str | None = None,
     mode: str | None = None,
+    default_slot: ModelSlot = ModelSlot.FAST,
     return_details: bool = False,
     request_id: str | None = None,
 ) -> ExtractResponse | tuple[ExtractResponse, ExtractionRunDetails]:
@@ -433,7 +438,9 @@ async def extract_event(
         # A pinned call (explicit provider or model) skips escalation; the
         # default production path retries on the smart_model.
         pinned = provider is not None or model is not None
-        config = resolve_config(provider, model, mode, version, escalate=not pinned)
+        config = resolve_config(
+            provider, model, mode, version, escalate=not pinned, default_slot=default_slot
+        )
         response, details = await run_extraction(
             raw_text, image_data_url, config, today=today, request_id=request_id
         )

@@ -49,11 +49,11 @@ The minimum to test with ~10 friendly parents without taking on real risk.
       query can't reach another user's rows (ADR-010); secrets in env / Lambda
       vars, not the repo.
 - [x] **Settle analytics & cookies (PECR).** ✅ Confirmed 2026-06-16; updated
-      2026-06-26 (ADR-023). Analytics is now **first-party** — events are written
-      to our own Supabase `analytics_events` table, with **no third-party
-      analytics service and nothing stored on the device** (no cookie, no
-      localStorage), so no PECR consent banner is required. The funnel is keyed by
-      the stable Supabase user id, not a persisted cookie.
+      2026-07-20. Product analytics have been **removed** — the first-party
+      `analytics_events` table and its funnel were dropped along with the
+      extraction A/B experiment. There is now **no analytics collection at all**,
+      no third-party analytics service, and nothing stored on the device (no
+      cookie, no localStorage), so no PECR consent banner is required.
 
 ## Tier 1 — When real (not fake) personal data is involved
 
@@ -102,8 +102,8 @@ If/when testers enter genuine family data, add:
 Don't do these now — they're the "problem you want to have." Listed so they're
 not forgotten.
 
-- [ ] **Full privacy policy** (not just the test notice). *(Cookie/consent for
-      analytics has already arrived — see the PECR item in Tier 0.)*
+- [ ] **Full privacy policy** (not just the test notice). *(No analytics or
+      cookies are in use — see the PECR item in Tier 0.)*
 - [ ] **Children's Code (Age Appropriate Design Code)** review if the service is
       likely to be accessed by children.
 - [ ] **Signed DPAs** with all processors (OpenAI ✅, Groq ✅, Supabase, hosting, etc.).
@@ -127,8 +127,8 @@ and the heavier stuff kick in when real data and real users do.
 
 **Status (2026-06-16):** Tier 0 complete — consent, privacy notice, self-serve
 deletion, LLM disclosure, DPAs (OpenAI executed · Groq auto-incorporated),
-training off / Groq ZDR on, no raw input persistence, and cookieless analytics
-(no PECR banner needed). **Special-category data handled early:** the notice now
+training off / Groq ZDR on, no raw input persistence, and no analytics or
+cookies (no PECR banner needed). **Special-category data handled early:** the notice now
 explicitly names health/religious data and the sign-up consent is explicit
 (Art 9 condition), with a no-health-profiling design rule. Ready for the
 ~10-parent test; the remaining Tier 1 items (ICO fee, written DPIA, retention

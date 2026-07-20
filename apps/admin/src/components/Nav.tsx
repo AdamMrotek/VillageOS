@@ -7,10 +7,7 @@ import Logo from "@repo/ui/custom_components/logo";
 import Navbar from "@repo/ui/custom_components/navbar";
 import UserMenu from "@repo/ui/custom_components/user-menu";
 
-const LINKS = [
-  { href: "/", label: "Experiments" },
-  { href: "/evals", label: "Evals" },
-];
+const LINKS = [{ href: "/", label: "Evals" }];
 
 /** Top nav shared across the admin dashboards. Hidden on /login (which has no
  *  session yet). Each page keeps its own auth gate. Uses the shared brand +

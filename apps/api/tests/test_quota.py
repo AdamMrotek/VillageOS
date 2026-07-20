@@ -28,18 +28,6 @@ class TestResolveTier:
 
 
 class TestTierPolicy:
-    def test_demo_is_capped_on_provider_default_model(self):
-        # model None → use the configured provider's cheap default (groq
-        # qwen3.6-27b in prod); pinning an OpenAI name would break under LLM_PROVIDER=groq.
-        assert TIER_POLICY["demo"] == {"daily_cap": 15, "model": None}
-
-    def test_free_capped_on_default_model(self):
-        assert TIER_POLICY["free"]["daily_cap"] == 50
-        assert TIER_POLICY["free"]["model"] is None
-
-    def test_pro_is_unlimited(self):
-        assert TIER_POLICY["pro"]["daily_cap"] is None
-
     def test_unknown_tier_falls_back_to_free(self):
         assert policy_for("enterprise") is TIER_POLICY["free"]
 

@@ -18,6 +18,21 @@ cheap to read and safe for the eval to mutate at import time.
 """
 
 from dataclasses import dataclass
+from enum import StrEnum
+
+
+class ModelSlot(StrEnum):
+    """Which model *role* in a ProviderConfig a caller resolves to.
+
+    Each value is the matching ``ProviderConfig`` field name, so
+    ``getattr(cfg, slot.value)`` yields the concrete model. This lets callers
+    (e.g. quota tiers) reference a model by role against *whatever* provider is
+    active, instead of pinning a name that only fits one provider.
+    """
+
+    FAST = "fast_model"
+    SMART = "smart_model"
+    VISION = "vision_model"
 
 
 @dataclass(frozen=True)
@@ -88,42 +103,3 @@ def register_provider(
     PROVIDERS[name] = config
     if model_modes:
         MODEL_MODES.update(model_modes)
-
-
-# ---------------------------------------------------------------------------
-# Extraction experiment arms
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ExtractionArm:
-    """A named provider stack for one A/B arm — one pinned model per input type.
-
-    Pinning both provider and model in ``extract_event`` disables low-confidence
-    escalation, so an arm is exactly one model on each path. Arms are decoupled
-    from the production ``PROVIDERS`` defaults on purpose: an experiment can pin a
-    model (e.g. Groq qwen) that differs from what that provider serves by default
-    (e.g. Groq gpt-oss), without disturbing production.
-    """
-
-    provider: str
-    text_model: str
-    vision_model: str
-
-    def model_for(self, *, vision: bool) -> str:
-        return self.vision_model if vision else self.text_model
-
-
-# The library of arms an extraction experiment can pair. To run a new experiment,
-# add the arms you need here (or reuse existing ones), then point the experiment's
-# DB config row at their names — e.g. gpt-5.4-nano vs qwen is the pair
-# {"openai-nano": <weight>, "groq-qwen": <weight>} with default_variant
-# "openai-nano". No assignment-code change, and existing arms are never
-# overwritten in place.
-EXTRACTION_ARMS: dict[str, ExtractionArm] = {
-    "openai-nano": ExtractionArm("openai", "gpt-5.4-nano", "gpt-5.4-nano"),
-    "groq-qwen": ExtractionArm("groq", "qwen/qwen3.6-27b", "qwen/qwen3.6-27b"),
-    # The current production Groq stack (gpt-oss text, qwen vision), available as
-    # an arm for experiments that want to A/B the shipped configuration itself.
-    "groq-oss": ExtractionArm("groq", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"),
-}
