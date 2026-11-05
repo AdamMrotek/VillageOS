@@ -64,6 +64,7 @@ function EventDetailContent({
   const toggleMut = useToggleActionItem();
   const deleteMut = useDeleteEvent();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [calendarMenuOpen, setCalendarMenuOpen] = useState(false);
 
   const items = event.action_items;
   const date = new Date(event.start_time);
@@ -149,7 +150,7 @@ function EventDetailContent({
 
       <div className="border-t border-hairline bg-background px-6 py-3">
         <div className="mb-2">
-          <Popover>
+          <Popover open={calendarMenuOpen} onOpenChange={setCalendarMenuOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
@@ -161,14 +162,20 @@ function EventDetailContent({
             <PopoverContent align="start" className="w-44 p-1">
               <button
                 type="button"
-                onClick={() => openGoogleCalendar(event)}
+                onClick={() => {
+                  openGoogleCalendar(event);
+                  setCalendarMenuOpen(false);
+                }}
                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-[12px] text-ink-soft transition-colors hover:bg-surface-alt hover:text-ink"
               >
                 Google Calendar
               </button>
               <button
                 type="button"
-                onClick={() => downloadIcs(event)}
+                onClick={() => {
+                  downloadIcs(event);
+                  setCalendarMenuOpen(false);
+                }}
                 className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-[12px] text-ink-soft transition-colors hover:bg-surface-alt hover:text-ink"
               >
                 Download .ics
