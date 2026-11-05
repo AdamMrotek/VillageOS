@@ -108,6 +108,17 @@ alongside a mutation that already exposes `isPending`.
 
 ---
 
+## Calendar export
+
+The event detail sheet has an "Add to calendar" popover: a prefilled Google
+Calendar link and an `.ics` download. Both are built client-side from the stored
+event in `src/lib/utils/calendar-export.ts` (pure builders + click-handler
+wrappers) — no OAuth, no backend, nothing sent anywhere until the user clicks.
+Timed events export as UTC instants; all-day events use the local calendar date
+with an exclusive end. A missing `end_time` defaults to 1 hour.
+
+---
+
 ## Dates & hydration
 
 Dates are resolved **on the client only**, never during SSR. The server renders in

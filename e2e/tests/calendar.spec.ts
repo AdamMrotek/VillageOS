@@ -66,6 +66,7 @@ test.beforeEach(async ({ request }) => {
 
 test("extraction happy path: paste → extract → create → event on calendar", async ({
   page,
+  context,
 }) => {
   await page.clock.setFixedTime(FROZEN_NOW);
 
@@ -115,4 +116,29 @@ test("extraction happy path: paste → extract → create → event on calendar"
   }
   // The fixture's urgent item surfaces with its urgency, not just its text.
   await expect(prepList.getByText("URGENT")).toBeVisible();
+
+  // 6. Export: the detail sheet offers Google Calendar (prefilled link) and
+  //    an .ics download. Google itself is stubbed — we only assert the URL.
+  await context.route("https://calendar.google.com/**", (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: "ok" }),
+  );
+  await chip.click();
+  await page.getByRole("button", { name: "Add to calendar" }).click();
+
+  const [gcal] = await Promise.all([
+    context.waitForEvent("page"),
+    page.getByRole("button", { name: "Google Calendar" }).click(),
+  ]);
+  const gcalParams = new URL(gcal.url()).searchParams;
+  expect(gcalParams.get("text")).toBe(DRAFT.title);
+  expect(gcalParams.get("dates")).toMatch(/^20260918T150000Z\/\d{8}T\d{6}Z$/);
+  expect(gcalParams.get("location")).toBe(DRAFT.location);
+  await gcal.close();
+
+  await page.getByRole("button", { name: "Add to calendar" }).click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Download .ics" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe("summer-bake-sale.ics");
 });

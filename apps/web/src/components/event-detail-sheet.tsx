@@ -8,7 +8,13 @@ import {
   SheetDescription,
   SheetTitle,
 } from "@repo/ui/components/sheet";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@repo/ui/components/popover";
 import type { StoredEvent } from "@/lib/types/events";
+import { downloadIcs, openGoogleCalendar } from "@/lib/utils/calendar-export";
 import { formatTime } from "@/lib/utils/date";
 import { CALENDAR_LOCALE } from "@/lib/config/calendar";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
@@ -142,6 +148,34 @@ function EventDetailContent({
       </div>
 
       <div className="border-t border-hairline bg-background px-6 py-3">
+        <div className="mb-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-7 items-center justify-center rounded-sm border border-hairline px-3 text-[11px] font-medium text-ink-soft transition-colors hover:bg-surface-alt hover:text-ink"
+              >
+                Add to calendar
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-44 p-1">
+              <button
+                type="button"
+                onClick={() => openGoogleCalendar(event)}
+                className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-[12px] text-ink-soft transition-colors hover:bg-surface-alt hover:text-ink"
+              >
+                Google Calendar
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadIcs(event)}
+                className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-[12px] text-ink-soft transition-colors hover:bg-surface-alt hover:text-ink"
+              >
+                Download .ics
+              </button>
+            </PopoverContent>
+          </Popover>
+        </div>
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"

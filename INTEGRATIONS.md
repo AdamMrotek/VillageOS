@@ -56,6 +56,17 @@ Google sign-in return to the wrong host.
 
 ---
 
+## Google Calendar — "Add to calendar" (link-based)
+
+Not an API integration. The event sheet opens
+`calendar.google.com/calendar/render?action=TEMPLATE&…` with the event prefilled,
+built in the browser. No Google API scope, token or credential is involved, and
+no data goes to Google until the user clicks and confirms in their own calendar.
+A real sync (`calendar.events` scope) would need token storage plus DPIA/privacy
+updates — not built.
+
+---
+
 ## Google Cloud — OAuth (social sign-in)
 
 **What it does.** Backs "Continue with Google" on the landing sign-in form and
