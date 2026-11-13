@@ -73,6 +73,13 @@ Stores calendar events belonging to a user. Created by `supabase/migrations/2026
 
 **Row-level security:** enabled and **load-bearing**. The `users_own_events` policy restricts all operations to rows where `auth.uid() = user_id`. User routes go through `get_user_db` in `apps/api/app/core/db.py`, which builds a per-request Supabase client scoped to the caller's JWT — so every query runs as that user and RLS does the filtering. Service-layer code does not add `.eq("user_id", ...)` filters; forgetting one is no longer a leak. `INSERT`s must still include `user_id` for the policy's `WITH CHECK` clause to pass. The secret-key client (`get_admin_db`) bypasses RLS and is reserved for admin paths.
 
+### `provider_events`
+
+Events a provider publishes on their public page. Created by
+`supabase/migrations/20261113000000_create_provider_events.sql`. Public-read
+once published, owner-write, draft-only delete. Columns, RLS and status rules
+are documented in [PROVIDERS.md](PROVIDERS.md#provider-events).
+
 ---
 
 ## Pydantic ↔ DB mapping

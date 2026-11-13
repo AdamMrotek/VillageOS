@@ -12,6 +12,7 @@ import {
   type EventType,
   type ParentEvent,
 } from "@/lib/types/events";
+import { isoToParts, partsToIso } from "@/lib/utils/date";
 
 // "active" is the editable form, "loading" a submit in flight (everything
 // disabled, button reads "Creating…"), "disabled" fully inert.
@@ -31,29 +32,6 @@ type EventFormProps = {
   onSubmit: (event: ParentEvent) => void;
   onDiscard: () => void;
 };
-
-// Split an ISO timestamp into the `date` (YYYY-MM-DD) and `time` (HH:mm) parts
-// the native <input type="date"> / <input type="time"> controls expect, in the
-// viewer's local zone. Empty parts for a null/invalid input.
-function isoToParts(iso: string | null): { date: string; time: string } {
-  if (!iso) return { date: "", time: "" };
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return {
-    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-  };
-}
-
-// Recombine a date + time part back into an ISO string. No date → null. When
-// allDay (or the time was left blank) we anchor to midnight local.
-function partsToIso(date: string, time: string, allDay: boolean): string | null {
-  if (!date) return null;
-  const d = new Date(`${date}T${allDay || !time ? "00:00" : time}`);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
-}
 
 // Small flag glyph for the urgent badge / toggle. `filled` paints the pennant
 // solid (urgent state); otherwise it's an outline.

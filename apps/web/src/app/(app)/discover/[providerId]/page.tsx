@@ -4,6 +4,8 @@ import Image from "next/image";
 import { use } from "react";
 import PageLayout from "@/components/page-layout";
 import { CategoryBadge } from "@/components/provider-card";
+import ProviderEventCard from "@/components/provider-event-card";
+import { useProviderEvents } from "@/lib/queries/provider-events";
 import { useProvider } from "@/lib/queries/providers";
 
 export default function ProviderDetailPage({
@@ -13,6 +15,7 @@ export default function ProviderDetailPage({
 }) {
   const { providerId } = use(params);
   const { data: provider, isLoading, isError } = useProvider(providerId);
+  const { data: events, isError: eventsError } = useProviderEvents(providerId);
 
   return (
     <PageLayout
@@ -70,6 +73,27 @@ export default function ProviderDetailPage({
             </div>
           )}
         </div>
+      )}
+
+      {provider && (
+        <section aria-labelledby="upcoming-events" className="space-y-3">
+          <h2 id="upcoming-events" className="text-heading text-ink">
+            Upcoming events
+          </h2>
+          {eventsError && (
+            <p className="text-sm text-destructive">
+              Couldn&apos;t load events. Please try again.
+            </p>
+          )}
+          {events && events.length === 0 && (
+            <p className="text-sm text-ink-soft">No upcoming events.</p>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {events?.map((event) => (
+              <ProviderEventCard key={event.id} event={event} />
+            ))}
+          </div>
+        </section>
       )}
     </PageLayout>
   );

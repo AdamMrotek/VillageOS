@@ -2,13 +2,14 @@
 
 Providers are organisations (schools, sports clubs, councils, libraries, community groups) that parents can discover in VillageOS. A provider is an ordinary auth user whose `profiles.role` is `provider`; the `provider_profiles` table holds the **public** organisation details they publish, and the parent-facing directory reads from it.
 
-Three surfaces make up the feature:
+Four surfaces make up the feature:
 
 | Surface | Route | Who | What |
 | --- | --- | --- | --- |
 | **My provider page** | `/provider` | the provider (owner) | create / edit their own public profile + cover image |
 | **Discover** | `/discover` | anyone signed in | search the directory of providers |
-| **Provider detail** | `/discover/[providerId]` | anyone signed in | read a single provider's public page |
+| **Provider detail** | `/discover/[providerId]` | anyone signed in | read a single provider's public page and its upcoming events |
+| **My events** | `/provider/events` | the provider (owner) | create, edit, publish, unpublish and cancel events |
 
 ## Data model
 
@@ -71,6 +72,66 @@ Why it's built this way:
 
 `/discover/[providerId]` (`apps/web/src/app/(app)/discover/[providerId]/page.tsx`) reads one provider via `useProvider(userId)` → `GET /api/providers/{user_id}` (public, returns 404 if missing). It shows the details (location, description, website, tags) with the cover image beside them on desktop (`md:flex-row`) and below them on mobile.
 
+## Provider events
+
+Phase 1 of [docs/PROVIDER_EVENTS_PLAN.md](docs/PROVIDER_EVENTS_PLAN.md): a
+provider creates events and publishes them to their public page. Reserving a
+spot is Phase 2 and is not built.
+
+### Data model
+
+`provider_events` (migration `20261113000000_create_provider_events.sql`):
+
+| Column | Notes |
+| --- | --- |
+| `id` | PK. |
+| `provider_id` | FK → `provider_profiles(user_id)` `ON DELETE CASCADE`. An event needs a provider page to appear on. |
+| `title`, `event_type`, `start_time`, `end_time`, `is_all_day`, `location`, `description` | Same shape and limits as `events` (title ≤60, description ≤240, end after start). Shared in the API through `EventCore`. |
+| `capacity` | Positive integer, or `NULL` for unlimited. Stored and shown; not enforced until reservations exist. |
+| `status` | `provider_event_status` enum: `draft`, `published`, `cancelled`. |
+| `version` | Starts at 1. Reserved for change tracking (Phase 3); nothing bumps it yet. |
+
+It is a separate table from `events` on purpose: `events` rows are private to
+one parent, these are public once published.
+
+### Row-level security
+
+- `SELECT` — anyone for `published` and `cancelled` rows; the owner also reads
+  their own drafts.
+- `INSERT` / `UPDATE` — owner only (`auth.uid() = provider_id`).
+- `DELETE` — owner only, and only while `draft`.
+
+Because published rows are public, "my events" must filter on `provider_id`
+explicitly, and the public listing filters on status explicitly so a provider
+viewing their own public page sees what parents see.
+
+### Status rules
+
+| From | Action | To |
+| --- | --- | --- |
+| `draft` | publish (start must not be more than a day in the past) | `published` |
+| `published` | unpublish | `draft` |
+| `published` | cancel | `cancelled` (terminal, not editable) |
+| `draft` | delete | row removed |
+
+A published event is cancelled rather than deleted, so parents see a
+cancellation instead of the event disappearing. Each transition is a single
+conditional `UPDATE` (the expected current status is part of the `WHERE`), so
+racing requests can't both succeed. A wrong-state request returns `409` with a
+message the UI shows as-is.
+
+The public listing returns events that started up to one day ago, which keeps
+in-progress and all-day events visible without knowing the viewer's timezone.
+
+### Pages
+
+- `/provider/events` — the provider's events as cards with a status badge and
+  the actions valid for that status. Cancelling asks for a second click.
+  Without a provider page it links to `/provider` instead.
+- `/provider/events/new`, `/provider/events/[eventId]` — `ProviderEventForm`.
+  The edit page reads the event from the cached list.
+- `/discover/[providerId]` — an "Upcoming events" section of `ProviderEventCard`s.
+
 ## Category styling
 
 Providers share a colour language with calendar events. `apps/web/src/lib/provider-styles.ts` mirrors `event-styles.ts` (same `dot` / `bg` / `border` shape and palette); where a category lines up with an event type the colour matches on purpose (`school` → event blue, `sports_club` → `accent`). `ProviderCard` applies the per-category **3px left accent border** (same treatment events use in the week grid). The `CategoryBadge` is a neutral pill with the label only — deliberately no colour dot, which would read as an availability/status light.
@@ -87,6 +148,17 @@ All under `apps/api/app/routers/providers.py`, prefix `/api/providers`:
 | `POST` | `/me/cover-upload-url` | required | Get a presigned S3 POST for a cover image. |
 | `GET` | `/{user_id}` | public | A single provider's public profile. |
 
+Events, in `apps/api/app/routers/provider_events.py` (same prefix):
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/me/events` | required | The caller's events, drafts included. |
+| `POST` | `/me/events` | required | Create a draft (`409` without a provider page). |
+| `PUT` | `/me/events/{event_id}` | required | Edit a draft or published event. |
+| `POST` | `/me/events/{event_id}/publish` · `/unpublish` · `/cancel` | required | Change status. |
+| `DELETE` | `/me/events/{event_id}` | required | Delete a draft. |
+| `GET` | `/{provider_id}/events` | required | A provider's upcoming published and cancelled events. |
+
 > `/me` and `/me/cover-upload-url` are declared **before** `/{user_id}` so `me` isn't captured as a path param.
 
 ## Key files
@@ -96,13 +168,22 @@ apps/api/app/routers/providers.py        # endpoints
 apps/api/app/services/providers.py       # search / get / upsert
 apps/api/app/services/provider_media.py  # presigned cover-upload tickets
 apps/api/app/schemas/providers.py        # Pydantic models + validation
+apps/api/app/routers/provider_events.py  # event endpoints
+apps/api/app/services/provider_events.py # event CRUD + status transitions
+apps/api/app/schemas/provider_events.py  # ProviderEventInput (extends EventCore)
+apps/api/tests/test_provider_events.py   # schema + service rules
 apps/api/template.yaml                   # ProviderCover* S3 bucket, OAC, CloudFront
 supabase/migrations/2026060800000*.sql   # table, RLS, image column
 
 apps/web/src/app/(app)/provider/page.tsx            # owner edit form
 apps/web/src/app/(app)/discover/page.tsx            # search
 apps/web/src/app/(app)/discover/[providerId]/page.tsx  # detail
+apps/web/src/app/(app)/provider/events/             # owner list, new, edit
 apps/web/src/components/provider-card.tsx           # card + CategoryBadge
+apps/web/src/components/provider-event-card.tsx     # event card + status badge
+apps/web/src/components/provider-event-form.tsx     # create / edit form
+apps/web/src/lib/queries/provider-events.ts         # event React Query hooks
+apps/web/src/lib/types/provider-events.ts           # event TS types
 apps/web/src/components/cover-dropzone.tsx           # drag/drop uploader
 apps/web/src/lib/queries/providers.ts               # React Query hooks + upload
 apps/web/src/lib/provider-styles.ts                 # per-category colours
