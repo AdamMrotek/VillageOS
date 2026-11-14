@@ -1,7 +1,6 @@
 # Provider Events & Reservations — Plan and Design
 
-Status: **Phase 1 built** (2026-11-13, uncommitted); everything else is
-proposed.
+Status: **Phase 1 built** (2026-11-13); everything else is proposed.
 
 Providers create and publish events; parents discover them, reserve a spot, see
 the event on their calendar, and stay up to date when the provider edits or
@@ -277,11 +276,11 @@ real two-way Google Calendar API sync.
 
 ## 3. Open items
 
-- **Role assignment (check before Phase 1).** `handle_new_user` in
-  `supabase/migrations/20260508000002_create_profiles.sql` takes `role` from
-  client-controlled sign-up metadata. Unless a later migration changed this,
-  anyone can self-assign `provider` or `admin`. Confirm and fix before provider
-  write access grows.
+- ~~**Role assignment.**~~ Closed by
+  `supabase/migrations/20261114000000_lock_down_profile_role.sql`: sign-up can
+  only yield `parent` or `provider`, and users can no longer update
+  `profiles.role` on their own row. `admin` is granted out of band. Provider
+  sign-up stays self-serve, so `provider` is not a vetted role.
 - Should emails be limited to events starting soon (for example within 14
   days), with distant changes left to the in-app badge? (Assumed: no limit for
   now.)
