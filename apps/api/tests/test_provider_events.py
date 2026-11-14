@@ -8,6 +8,7 @@ itself is declared in the migration and guarded by test_rls_coverage.py.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from operator import itemgetter
 from typing import Any, cast
 
 import pytest
@@ -89,7 +90,7 @@ class _Query:
             for r in matched:
                 self._rows.remove(r)
         elif self._order:
-            matched.sort(key=lambda r: r[self._order])
+            matched.sort(key=itemgetter(self._order))
         return _Result([dict(r) for r in matched])
 
 
