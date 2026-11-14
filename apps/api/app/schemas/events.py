@@ -41,7 +41,11 @@ class ActionItemUpdate(BaseModel):
     done: bool
 
 
-class ParentEvent(BaseModel):
+class EventCore(BaseModel):
+    """The what / when / where shared by a parent's own events and the events a
+    provider publishes (schemas/provider_events.py). Field limits here are
+    mirrored by CHECK constraints on both tables."""
+
     title: str = Field(..., description="Short title, max 60 chars")
     event_type: EventType
     start_time: datetime = Field(
@@ -52,8 +56,6 @@ class ParentEvent(BaseModel):
     is_all_day: bool = False
     location: str | None = None
     description: str | None = Field(None, description="Up to a few sentences, max 240 chars")
-    action_items: list[ActionItem] = []
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence, 0 to 1")
 
     @field_validator("title")
     @classmethod
@@ -88,6 +90,11 @@ class ParentEvent(BaseModel):
         if self.end_time is not None and self.end_time <= self.start_time:
             raise ValueError("end_time must be after start_time")
         return self
+
+
+class ParentEvent(EventCore):
+    action_items: list[ActionItem] = []
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence, 0 to 1")
 
 
 class StoredEvent(ParentEvent):
