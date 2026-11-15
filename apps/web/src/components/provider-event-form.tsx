@@ -19,8 +19,11 @@ type ProviderEventFormProps = {
   initial: ProviderEventInput | null;
   submitLabel: string;
   pending: boolean;
-  onSubmit: (event: ProviderEventInput) => void;
+  /** `notifyAttendees` is only meaningful with `askToNotify`; otherwise true. */
+  onSubmit: (event: ProviderEventInput, notifyAttendees: boolean) => void;
   onCancel: () => void;
+  /** Offer the "Notify attendees" choice — for an event parents have reserved. */
+  askToNotify?: boolean;
 };
 
 const inputClass =
@@ -44,7 +47,9 @@ export default function ProviderEventForm({
   pending,
   onSubmit,
   onCancel,
+  askToNotify = false,
 }: ProviderEventFormProps) {
+  const [notifyAttendees, setNotifyAttendees] = useState(true);
   const [title, setTitle] = useState(initial?.title ?? "");
   const [eventType, setEventType] = useState<EventType>(
     initial?.event_type ?? "other",
@@ -88,18 +93,21 @@ export default function ProviderEventForm({
       return;
     }
     setEndError(null);
-    onSubmit({
-      title: title.trim(),
-      event_type: eventType,
-      start_time,
-      end_time,
-      is_all_day: isAllDay,
-      location: location.trim() || null,
-      description: description.trim() || null,
-      // The input is type=number with min=1 step=1, so a non-empty value is a
-      // positive integer by the time the form submits.
-      capacity: capacity ? Number(capacity) : null,
-    });
+    onSubmit(
+      {
+        title: title.trim(),
+        event_type: eventType,
+        start_time,
+        end_time,
+        is_all_day: isAllDay,
+        location: location.trim() || null,
+        description: description.trim() || null,
+        // The input is type=number with min=1 step=1, so a non-empty value is a
+        // positive integer by the time the form submits.
+        capacity: capacity ? Number(capacity) : null,
+      },
+      notifyAttendees,
+    );
   }
 
   return (
@@ -275,6 +283,26 @@ export default function ProviderEventForm({
           />
           <p className="text-meta">Leave empty if there is no limit.</p>
         </div>
+
+        {askToNotify && (
+          <div className="space-y-1.5">
+            <label className="flex items-center gap-2 text-body text-ink">
+              <Checkbox
+                checked={notifyAttendees}
+                onCheckedChange={(checked) =>
+                  setNotifyAttendees(checked === true)
+                }
+                className="bg-surface"
+              />
+              Notify attendees
+            </label>
+            <p className="text-meta">
+              Parents who reserved are emailed if you change the time or
+              location. Untick for a small correction — they still see
+              &ldquo;Updated&rdquo; in their calendar.
+            </p>
+          </div>
+        )}
 
         <div className="flex gap-2 pt-2">
           <Button type="submit">{pending ? "Saving…" : submitLabel}</Button>

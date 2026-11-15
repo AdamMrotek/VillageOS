@@ -15,6 +15,7 @@ from app.routers import (
     health,
     provider_events,
     providers,
+    reservations,
 )
 
 # Populate os.environ from .env before the first get_settings() call below.
@@ -41,6 +42,7 @@ app.include_router(extract.router)
 app.include_router(demo.router)
 app.include_router(providers.router)
 app.include_router(provider_events.router)
+app.include_router(reservations.router)
 app.include_router(account.router)
 app.include_router(admin.router)
 

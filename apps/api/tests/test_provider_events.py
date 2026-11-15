@@ -16,7 +16,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from supabase import Client
 
-from app.schemas.provider_events import ProviderEventInput
+from app.schemas.provider_events import ProviderEventInput, ProviderEventUpdate
 from app.services import provider_events as service
 
 PROVIDER = "11111111-1111-1111-1111-111111111111"
@@ -99,15 +99,50 @@ class _Result:
         self.data = data
 
 
+class _Rpc:
+    def __init__(self, data: list[dict[str, Any]]):
+        self._data = data
+
+    def execute(self):
+        return _Result(self._data)
+
+
 class _FakeDb:
     def __init__(self, *, with_profile: bool = True):
         self.tables: dict[str, list[dict[str, Any]]] = {
             "provider_events": [],
             "provider_profiles": [{"user_id": PROVIDER}] if with_profile else [],
+            "reservations": [],
         }
+        # Who the JWT says is calling. Only the database functions need it —
+        # the real ones read auth.uid(); table queries filter explicitly.
+        self.acting_as = PROVIDER
 
     def table(self, name: str) -> _Query:
         return _Query(self.tables[name])
+
+    def rpc(self, name: str, params: dict[str, Any]) -> _Rpc:
+        """Stand-ins for the database functions the service calls. The real
+        ones (and the trigger behind them) are tested against Postgres in
+        supabase/tests/provider_events.sh."""
+        if name == "provider_event_spots_taken":
+            taken: dict[str, int] = {}
+            for r in self.tables["reservations"]:
+                if r["status"] == "confirmed" and r["event_id"] in params["p_event_ids"]:
+                    taken[r["event_id"]] = taken.get(r["event_id"], 0) + r["spots"]
+            return _Rpc([{"event_id": k, "spots_taken": v} for k, v in taken.items()])
+        if name == "update_provider_event":
+            matched = [
+                r
+                for r in self.tables["provider_events"]
+                if r["id"] == params["p_event_id"]
+                and r["provider_id"] == self.acting_as
+                and r["status"] != "cancelled"
+            ]
+            for r in matched:
+                r.update(params["p_event"])
+            return _Rpc([dict(r) for r in matched])
+        raise AssertionError(f"unexpected rpc: {name}")
 
 
 def _db(**kwargs: Any) -> Client:
@@ -126,6 +161,10 @@ def _input(**overrides: Any) -> ProviderEventInput:
     }
     fields.update(overrides)
     return ProviderEventInput(**fields)
+
+
+def _update(**overrides: Any) -> ProviderEventUpdate:
+    return ProviderEventUpdate(**_input(**overrides).model_dump())
 
 
 def _status(exc: pytest.ExceptionInfo[HTTPException]) -> int:
@@ -235,7 +274,7 @@ class TestUpdate:
     def test_updates_fields(self):
         db = _db()
         event = service.create_event(db, PROVIDER, _input())
-        updated = service.update_event(db, PROVIDER, event.id, _input(title="Moved", capacity=5))
+        updated = service.update_event(db, PROVIDER, event.id, _update(title="Moved", capacity=5))
         assert updated.title == "Moved"
         assert updated.capacity == 5
 
@@ -243,7 +282,7 @@ class TestUpdate:
         db = _db()
         event = service.create_event(db, PROVIDER, _input())
         service.publish_event(db, PROVIDER, event.id)
-        assert service.update_event(db, PROVIDER, event.id, _input()).status == "published"
+        assert service.update_event(db, PROVIDER, event.id, _update()).status == "published"
 
     def test_cancelled_event_cannot_be_edited(self):
         db = _db()
@@ -251,19 +290,22 @@ class TestUpdate:
         service.publish_event(db, PROVIDER, event.id)
         service.cancel_event(db, PROVIDER, event.id)
         with pytest.raises(HTTPException) as exc:
-            service.update_event(db, PROVIDER, event.id, _input(title="Nope"))
+            service.update_event(db, PROVIDER, event.id, _update(title="Nope"))
         assert _status(exc) == 409
 
     def test_another_provider_gets_404(self):
-        db = _db()
+        fake = _FakeDb()
+        db = cast(Client, fake)
         event = service.create_event(db, PROVIDER, _input())
+        fake.acting_as = OTHER
         with pytest.raises(HTTPException) as exc:
-            service.update_event(db, OTHER, event.id, _input(title="Hijack"))
+            service.update_event(db, OTHER, event.id, _update(title="Hijack"))
         assert _status(exc) == 404
+        assert fake.tables["provider_events"][0]["title"] != "Hijack"
 
     def test_unknown_event_is_404(self):
         with pytest.raises(HTTPException) as exc:
-            service.update_event(_db(), PROVIDER, str(uuid.uuid4()), _input())
+            service.update_event(_db(), PROVIDER, str(uuid.uuid4()), _update())
         assert _status(exc) == 404
 
 
@@ -301,7 +343,7 @@ class TestListings:
         live = service.create_event(db, PROVIDER, _input(title="Live"))
         service.publish_event(db, PROVIDER, live.id)
 
-        assert [e.title for e in service.list_public_events(db, PROVIDER)] == ["Live"]
+        assert [e.title for e in service.list_public_events(db, OTHER, PROVIDER)] == ["Live"]
 
     def test_public_listing_keeps_cancelled_events(self):
         db = _db()
@@ -309,7 +351,7 @@ class TestListings:
         service.publish_event(db, PROVIDER, event.id)
         service.cancel_event(db, PROVIDER, event.id)
 
-        assert [e.status for e in service.list_public_events(db, PROVIDER)] == ["cancelled"]
+        assert [e.status for e in service.list_public_events(db, OTHER, PROVIDER)] == ["cancelled"]
 
     def test_public_listing_drops_past_events_and_sorts_soonest_first(self):
         fake = _FakeDb()
@@ -334,5 +376,35 @@ class TestListings:
                 row["start_time"] = (now - timedelta(days=5)).isoformat()
                 row["end_time"] = (now - timedelta(days=5) + timedelta(hours=1)).isoformat()
 
-        titles = [e.title for e in service.list_public_events(db, PROVIDER)]
+        titles = [e.title for e in service.list_public_events(db, OTHER, PROVIDER)]
         assert titles == ["Sooner", "Later"]
+
+
+class TestSpots:
+    def _reserve(self, fake: _FakeDb, event_id: str, user_id: str, spots: int, status: str):
+        fake.tables["reservations"].append(
+            {"event_id": event_id, "user_id": user_id, "spots": spots, "status": status}
+        )
+
+    def test_listing_counts_confirmed_spots_and_the_callers_own(self):
+        fake = _FakeDb()
+        db = cast(Client, fake)
+        event = service.create_event(db, PROVIDER, _input())
+        service.publish_event(db, PROVIDER, event.id)
+        self._reserve(fake, event.id, OTHER, 2, "confirmed")
+        self._reserve(fake, event.id, "33333333-3333-3333-3333-333333333333", 3, "confirmed")
+        self._reserve(fake, event.id, "44444444-4444-4444-4444-444444444444", 4, "cancelled")
+
+        [listed] = service.list_public_events(db, OTHER, PROVIDER)
+        assert listed.spots_taken == 5
+        assert listed.my_spots == 2
+
+    def test_provider_sees_the_attendee_count_but_holds_no_spots(self):
+        fake = _FakeDb()
+        db = cast(Client, fake)
+        event = service.create_event(db, PROVIDER, _input())
+        self._reserve(fake, event.id, OTHER, 2, "confirmed")
+
+        [listed] = service.list_my_events(db, PROVIDER)
+        assert listed.spots_taken == 2
+        assert listed.my_spots == 0

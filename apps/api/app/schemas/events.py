@@ -1,7 +1,7 @@
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -97,6 +97,34 @@ class ParentEvent(EventCore):
     confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence, 0 to 1")
 
 
+class EventSnapshot(BaseModel):
+    """The fields a parent plans around, as they were at an earlier version of
+    a provider's event. Compared with the current event to say what changed."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    start_time: datetime
+    end_time: datetime | None = None
+    is_all_day: bool = False
+    location: str | None = None
+    status: str
+
+
+class ReservedEventInfo(BaseModel):
+    """What a calendar entry carries when it is a reserved provider event
+    rather than one of the parent's own."""
+
+    reservation_id: str
+    spots: int
+    provider_id: str
+    provider_name: str | None = None
+    cancelled: bool = False
+    # True while the provider has made a material change the parent hasn't
+    # opened yet; `previous` is then the state the parent last saw.
+    updated: bool = False
+    previous: EventSnapshot | None = None
+
+
 class StoredEvent(ParentEvent):
     model_config = ConfigDict(extra="ignore")
 
@@ -104,6 +132,11 @@ class StoredEvent(ParentEvent):
     # Pydantic supports narrowing a field's type in a subclass; mypy flags it
     # because list is invariant, but nothing writes ActionItems through the base.
     action_items: list[StoredActionItem] = []  # type: ignore[assignment]
+    # "own" = a row in the parent's `events` table. "provider" = a provider's
+    # event the parent reserved: read-only, `id` is the provider event's id and
+    # `reservation` is set.
+    source: Literal["own", "provider"] = "own"
+    reservation: ReservedEventInfo | None = None
 
 
 # The whole payload must look like base64 — a cheap whole-string scan even at

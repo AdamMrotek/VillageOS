@@ -52,9 +52,13 @@ export default function EditProviderEventPage({
           submitLabel="Save changes"
           pending={update.isPending}
           onCancel={() => router.push("/provider/events")}
-          onSubmit={(input) =>
+          askToNotify={event.status === "published" && event.spots_taken > 0}
+          onSubmit={(input, notifyAttendees) =>
             update.mutate(
-              { id: event.id, event: input },
+              {
+                id: event.id,
+                event: { ...input, notify_attendees: notifyAttendees },
+              },
               {
                 onSuccess: () => {
                   toast.success("Event saved.");

@@ -1,6 +1,9 @@
 # Provider Events & Reservations — Plan and Design
 
-Status: **Phase 1 built** (2026-11-13); everything else is proposed.
+Status: **Phases 1, 2 and 3 built** (2026-11-14). Phase 3b's code is complete
+but sending is off until SES is verified. Phase 4 onwards is proposed. Where
+the build differs from this design, the difference is listed under
+[2.1](#21-what-was-built-differently).
 
 Providers create and publish events; parents discover them, reserve a spot, see
 the event on their calendar, and stay up to date when the provider edits or
@@ -225,7 +228,7 @@ read-only, with "Cancel reservation" and a link to the provider page.
 - **Done when:** a provider publishes an event and a parent sees it on the
   provider's page.
 
-### Phase 2 — Reserve and show on the calendar
+### Phase 2 — Reserve and show on the calendar (built)
 
 - Migration: `reservations` table + RLS + `reserve_spot` function.
 - API: reserve, cancel reservation; merged `GET /api/events`.
@@ -234,7 +237,7 @@ read-only, with "Cancel reservation" and a link to the provider page.
 - **Done when:** two parents racing for the last spot produce exactly one
   reservation, and the reserved event shows in the week grid.
 
-### Phase 3 — Change propagation
+### Phase 3 — Change propagation (built; email sending switched off)
 
 Split in two so the in-app half ships without waiting on SES approval.
 
@@ -255,6 +258,27 @@ Split in two so the in-app half ships without waiting on SES approval.
 - **Done when:** a provider saves three edits within a few minutes and each
   attending parent receives exactly one email; an edit that is reverted sends
   none.
+
+### 2.1 What was built differently
+
+- **Providers can't read reservations.** 1.3 gave providers `SELECT` on
+  reservations for their own events. Built without it: a provider gets the
+  count of spots taken from a function, not the rows. Attendee names (1.7)
+  need consent copy and a DPIA entry first.
+- **Version history table.** `provider_event_versions` keeps the material
+  fields at each superseded version. Both the in-app "what changed" line and
+  the email diff read it; 1.5 did not say where the old values would come from.
+- **Change tracking is a database trigger**, not API code, so it also holds for
+  writes that go straight to PostgREST. `version` only moves once an event has
+  left draft.
+- **"Notify attendees" travels through `update_provider_event()`**, which sets
+  a transaction-local flag the trigger reads.
+- **Guards added:** an event with reservations can't be unpublished (it would
+  vanish from calendars — cancel it instead); capacity can't drop below the
+  spots reserved; a cancelled event can't be changed.
+- **Outstanding for 3b:** SES domain verification, production access and
+  `EMAIL_PROVIDER=ses` (steps in INTEGRATIONS.md). Until then the outbox fills
+  and nothing is sent.
 
 ### Phase 4 — External calendar sync (ICS feed)
 

@@ -24,8 +24,11 @@ async def create_event(
 
 
 @router.get("", response_model=list[StoredEvent])
-async def list_events(db: Client = Depends(get_user_db)):
-    return events_service.list_events(db)
+async def list_events(
+    auth: AuthContext = Depends(get_auth),
+    db: Client = Depends(get_user_db),
+):
+    return events_service.list_calendar(db, auth.user["sub"])
 
 
 @router.delete("/{event_id}", status_code=204)

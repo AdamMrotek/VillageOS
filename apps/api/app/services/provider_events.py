@@ -5,10 +5,14 @@ from fastapi import HTTPException
 from supabase import Client
 
 from app.schemas.provider_events import (
+    ListedProviderEvent,
     ProviderEventInput,
     ProviderEventStatus,
+    ProviderEventUpdate,
     StoredProviderEvent,
 )
+from app.services import reservations
+from app.services.db_errors import db_rules
 
 # postgrest types row data as generic JSON; this table always returns objects.
 _Row = dict[str, Any]
@@ -34,7 +38,21 @@ def _stored(rows: Any) -> list[StoredProviderEvent]:
     return [StoredProviderEvent.model_validate(row) for row in cast(list[_Row], rows)]
 
 
-def list_my_events(db: Client, user_id: str) -> list[StoredProviderEvent]:
+def _listed(db: Client, user_id: str, rows: Any) -> list[ListedProviderEvent]:
+    """Add how full each event is, and the caller's own reservation."""
+    events = cast(list[_Row], rows)
+    ids = [row["id"] for row in events]
+    taken = reservations.spots_taken(db, ids)
+    mine = reservations.my_spots(db, user_id, ids)
+    return [
+        ListedProviderEvent.model_validate(
+            {**row, "spots_taken": taken.get(row["id"], 0), "my_spots": mine.get(row["id"], 0)}
+        )
+        for row in events
+    ]
+
+
+def list_my_events(db: Client, user_id: str) -> list[ListedProviderEvent]:
     """Every event the caller owns, drafts included. The explicit provider_id
     filter is required: SELECT on this table is public for published rows, so
     RLS alone would also return other providers' events."""
@@ -46,11 +64,12 @@ def list_my_events(db: Client, user_id: str) -> list[StoredProviderEvent]:
         .execute()
         .data
     )
-    return _stored(rows)
+    return _listed(db, user_id, rows)
 
 
-def list_public_events(db: Client, provider_id: str) -> list[StoredProviderEvent]:
-    """A provider's upcoming published (and cancelled) events, soonest first."""
+def list_public_events(db: Client, user_id: str, provider_id: str) -> list[ListedProviderEvent]:
+    """A provider's upcoming published (and cancelled) events, soonest first,
+    as seen by `user_id`."""
     cutoff = (_now() - _PUBLIC_GRACE).isoformat()
     rows = (
         db.table(_TABLE)
@@ -62,7 +81,7 @@ def list_public_events(db: Client, provider_id: str) -> list[StoredProviderEvent
         .execute()
         .data
     )
-    return _stored(rows)
+    return _listed(db, user_id, rows)
 
 
 def create_event(db: Client, user_id: str, event: ProviderEventInput) -> StoredProviderEvent:
@@ -91,21 +110,24 @@ def _get_own(db: Client, user_id: str, event_id: str) -> StoredProviderEvent:
 
 
 def update_event(
-    db: Client, user_id: str, event_id: str, event: ProviderEventInput
+    db: Client, user_id: str, event_id: str, event: ProviderEventUpdate
 ) -> StoredProviderEvent:
-    data = event.model_dump(mode="json")
-    data["updated_at"] = _now().isoformat()
-    # The status guard is part of the UPDATE itself, so a concurrent cancel
-    # can't slip between a check and the write.
-    rows = (
-        db.table(_TABLE)
-        .update(data)
-        .eq("id", event_id)
-        .eq("provider_id", user_id)
-        .neq("status", ProviderEventStatus.cancelled.value)
-        .execute()
-        .data
-    )
+    """Edit an event. Goes through update_provider_event() rather than a plain
+    UPDATE so the "Notify attendees" choice reaches the change-tracking trigger
+    in the same transaction as the write. The function runs as the caller, so
+    RLS still limits it to their own events, and it skips cancelled ones as
+    part of the UPDATE — a concurrent cancel can't slip between a check and the
+    write."""
+    data = event.model_dump(mode="json", exclude={"notify_attendees"})
+    with db_rules():
+        rows = (
+            db.rpc(
+                "update_provider_event",
+                {"p_event_id": event_id, "p_event": data, "p_notify": event.notify_attendees},
+            )
+            .execute()
+            .data
+        )
     if not rows:
         _get_own(db, user_id, event_id)  # 404 if it isn't theirs / doesn't exist
         raise HTTPException(status_code=409, detail="A cancelled event can't be edited")
@@ -123,15 +145,18 @@ def _transition(
 ) -> StoredProviderEvent:
     """Move an event between statuses atomically: the expected current status
     is a condition of the UPDATE, so two racing requests can't both succeed."""
-    rows = (
-        db.table(_TABLE)
-        .update({"status": to_status.value, "updated_at": _now().isoformat()})
-        .eq("id", event_id)
-        .eq("provider_id", user_id)
-        .eq("status", from_status.value)
-        .execute()
-        .data
-    )
+    # db_rules: the change-tracking trigger refuses to unpublish an event that
+    # parents have reserved.
+    with db_rules():
+        rows = (
+            db.table(_TABLE)
+            .update({"status": to_status.value, "updated_at": _now().isoformat()})
+            .eq("id", event_id)
+            .eq("provider_id", user_id)
+            .eq("status", from_status.value)
+            .execute()
+            .data
+        )
     if not rows:
         _get_own(db, user_id, event_id)
         raise HTTPException(status_code=409, detail=conflict)

@@ -80,6 +80,21 @@ Events a provider publishes on their public page. Created by
 once published, owner-write, draft-only delete. Columns, RLS and status rules
 are documented in [PROVIDERS.md](PROVIDERS.md#provider-events).
 
+### `reservations`, `provider_event_versions`, `notification_outbox`
+
+Reserving a provider's event and telling parents when it changes
+(`20261114010000_create_reservations.sql`,
+`20261114020000_provider_event_change_propagation.sql`). The rules — capacity,
+versioning, the email outbox — live in Postgres functions and a trigger, not in
+the API. See [PROVIDERS.md](PROVIDERS.md#reservations).
+
+### `profiles`
+
+`role` is set by the sign-up trigger (`parent` or `provider` only) and is not
+writable by the user; `admin` is granted in SQL
+(`20261114000000_lock_down_profile_role.sql`). Users can update only
+`full_name` and `event_emails` on their own row.
+
 ---
 
 ## Pydantic ↔ DB mapping

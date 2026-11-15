@@ -402,6 +402,9 @@ function EventChip({
   compact?: boolean;
 }) {
   const style = eventTypeStyle(event.event_type);
+  // Set only on a provider's event the parent reserved.
+  const reservation = event.reservation;
+  const cancelled = reservation?.cancelled ?? false;
   const items = event.action_items;
   const openItems = items.filter((i) => !i.done);
   const visibleItems = items.slice(0, 2);
@@ -427,6 +430,7 @@ function EventChip({
         className={cn(
           "font-medium leading-snug text-ink text-[11px]",
           compact ? "line-clamp-2" : "mt-0.5",
+          cancelled && "text-ink-mute line-through",
         )}
       >
         {event.title}
@@ -434,6 +438,23 @@ function EventChip({
       {!compact && event.location && (
         <div className="mt-0.5 text-[10px] leading-snug text-ink-soft">
           {event.location}
+        </div>
+      )}
+      {!compact && reservation?.provider_name && (
+        <div className="mt-0.5 text-[10px] leading-snug text-ink-mute">
+          {reservation.provider_name}
+        </div>
+      )}
+      {reservation && (cancelled || reservation.updated) && (
+        <div
+          className={cn(
+            "mt-1 inline-block rounded-sm border px-1 font-mono text-[9px] uppercase tracking-wider",
+            cancelled
+              ? "border-destructive/50 text-destructive"
+              : "border-warm text-warm",
+          )}
+        >
+          {cancelled ? "Cancelled" : "Updated"}
         </div>
       )}
 

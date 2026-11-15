@@ -33,6 +33,9 @@ ADMIN_DB_ALLOWLIST = {
     "routers/account.py::delete_account",  # deleting an auth.users row requires the admin API
     "routers/admin.py",  # cross-user reads are the point; every route gated by require_admin
     "routers/extract.py::extract",  # usage_counters has no user RLS policy by design (ADR-017)
+    # The scheduled worker reads the outbox (no user RLS policy by design) and
+    # each recipient's address and email preference. No request, no caller JWT.
+    "services/notifications.py::run",
 }
 
 # Only core/db.py may construct a Supabase client; everything else goes

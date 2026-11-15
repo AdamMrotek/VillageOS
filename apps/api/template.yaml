@@ -32,6 +32,25 @@ Parameters:
     Type: String
     Default: http://localhost:3000
 
+  # Event-change emails (docs/PROVIDER_EVENTS_PLAN.md, phase 3b). Leave at
+  # `none` until the SES identity below is verified and out of the sandbox: the
+  # worker then runs but sends nothing and leaves the outbox pending.
+  EmailProvider:
+    Type: String
+    Default: none
+    AllowedValues: [none, ses]
+  # Verified SES domain identity the worker may send from.
+  SesIdentity:
+    Type: String
+    Default: notify.villageos.co.uk
+  EmailFrom:
+    Type: String
+    Default: VillageOS <events@notify.villageos.co.uk>
+  # Web app base URL, for links in emails.
+  AppUrl:
+    Type: String
+    Default: https://villageos.co.uk
+
 Globals:
   Function:
     Timeout: 30
@@ -88,6 +107,43 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
+      RetentionInDays: 7
+
+  # ---- Notification worker: emails parents when a reserved event changes ----
+  # Not behind the API: EventBridge invokes it every 5 minutes. It reads the
+  # notification_outbox table, waits for each event to go quiet, and sends at
+  # most one email per parent (app/services/notifications.py).
+  NotificationWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: worker_handler.handler
+      Timeout: 120
+      MemorySize: 512
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${SesIdentity}'
+      Environment:
+        Variables:
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_PUBLISHABLE_KEY: !Ref SupabasePublishableKey
+          SUPABASE_SECRET_KEY: !Ref SupabaseSecretKey
+          EMAIL_PROVIDER: !Ref EmailProvider
+          EMAIL_FROM: !Ref EmailFrom
+          APP_URL: !Ref AppUrl
+      Events:
+        Every5Minutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Description: Send pending event-change emails
+
+  NotificationWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${NotificationWorkerFunction}'
       RetentionInDays: 7
 
   # ---- Provider covers: private bucket, readable only through CloudFront (OAC) ----

@@ -22,6 +22,7 @@ domain, or onboarding a new environment.
 | **Vercel** | Frontend host | ✅ Live on `villageos.co.uk` (+ `village-os-web.vercel.app`) |
 | **GoDaddy** | Registrar + DNS for `villageos.co.uk` | ✅ Live — GoDaddy nameservers authoritative; records propagated |
 | **Resend** | Transactional email (via Supabase SMTP) | ✅ Live — `villageos.co.uk` verified, wired as Supabase custom SMTP |
+| **Amazon SES** | Event-change emails to parents | 🟡 Code deployed, sending **off** (`EmailProvider=none`) until the domain is verified |
 | **ImprovMX** | Inbound email forwarding — privacy contact | ✅ Live — `privacy@villageos.co.uk` → owner Gmail (MX + SPF verified) |
 | **Groq** | LLM provider (**active**) | ✅ Live — `LLM_PROVIDER=groq` |
 | **OpenAI** | LLM provider (standby) | 🟡 Configured but inactive |
@@ -190,6 +191,38 @@ wired in as Supabase's custom SMTP server.
 **Current state.** ✅ Live — `villageos.co.uk` is verified in Resend and wired as
 Supabase's custom SMTP, so Auth emails (sign-up, password reset, reauth nonce)
 send from `noreply@villageos.co.uk`. Setup steps in [AUTH.md](AUTH.md#custom-smtp).
+
+---
+
+## Amazon SES — event-change emails
+
+**What it does.** Sends the "an event you reserved changed / was cancelled"
+emails. Called with `boto3` from the notification worker Lambda
+(`NotificationWorkerFunction` in `apps/api/template.yaml`), behind the
+`send_email` interface in `apps/api/app/services/email.py`. Resend stays as
+Supabase's SMTP for auth emails only.
+
+**Sending domain.** `notify.villageos.co.uk`, from
+`events@notify.villageos.co.uk`. A dedicated subdomain keeps bounces and spam
+complaints on notification mail away from the domain that carries sign-up and
+password-reset emails.
+
+**Current state.** 🟡 The worker is deployed and runs every 5 minutes, but
+`EmailProvider` is `none`: it sends nothing and leaves `notification_outbox`
+rows pending. In-app "Updated" badges do not depend on it.
+
+**To switch on.**
+
+1. SES console (`eu-north-1`) → verify the domain identity
+   `notify.villageos.co.uk`; add the three DKIM CNAMEs it shows in GoDaddy.
+   Optionally set a custom MAIL FROM (an MX and an SPF TXT record).
+2. Request production access (leaves the sandbox; takes about a day).
+3. Check the `_dmarc.villageos.co.uk` policy, if set, covers the subdomain.
+4. Set the GitHub Actions variable `EMAIL_PROVIDER=ses` and redeploy the API.
+   The worker's role is already limited to `ses:SendEmail` on that identity.
+
+The deploy role needs permission to create the worker function, its role and
+its EventBridge schedule rule.
 
 ---
 

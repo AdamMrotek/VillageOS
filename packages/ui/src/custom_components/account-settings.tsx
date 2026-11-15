@@ -13,7 +13,10 @@ export default function AccountSettings({
   deleteAccount,
   changePasswordHref,
   afterDeleteHref = "/",
+  children,
 }: {
+  /** App-specific sections, shown between Security and the danger zone. */
+  children?: React.ReactNode;
   /** Deletes the account server-side; rejections surface as an inline error. */
   deleteAccount: () => Promise<void>;
   /** Change-password page; omit to hide the Security section. */
@@ -89,6 +92,8 @@ export default function AccountSettings({
           </div>
         </section>
       )}
+
+      {children}
 
       <section className="mt-8 space-y-4">
         <h2 className="text-sm font-medium text-ink">Danger zone</h2>

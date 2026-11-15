@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from supabase import Client
 
 from app.schemas.events import ParentEvent, StoredActionItem, StoredEvent
+from app.services import reservations
 
 # postgrest types row data as generic JSON; these tables always return objects.
 _Row = dict[str, Any]
@@ -48,6 +49,14 @@ def list_events(db: Client) -> list[StoredEvent]:
         StoredEvent.model_validate({**row, "action_items": items_by_event.get(row["id"], [])})
         for row in event_rows
     ]
+
+
+def list_calendar(db: Client, user_id: str) -> list[StoredEvent]:
+    """The parent's calendar: their own events plus the provider events they
+    have reserved, soonest first. Reserved events are read live from the
+    provider's row, never copied, so an edit there shows up on the next fetch."""
+    merged = list_events(db) + reservations.list_reserved_events(db, user_id)
+    return sorted(merged, key=reservations.sort_key)
 
 
 def delete_event(db: Client, event_id: str) -> None:

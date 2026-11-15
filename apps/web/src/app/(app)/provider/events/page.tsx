@@ -13,7 +13,7 @@ import {
   type ProviderEventAction,
 } from "@/lib/queries/provider-events";
 import { useMyProvider } from "@/lib/queries/providers";
-import type { StoredProviderEvent } from "@/lib/types/provider-events";
+import type { ListedProviderEvent } from "@/lib/types/provider-events";
 
 const ACTION_DONE: Record<ProviderEventAction, string> = {
   publish: "Event published — parents can now see it.",
@@ -80,7 +80,7 @@ export default function ProviderEventsPage() {
   );
 }
 
-function EventActions({ event }: { event: StoredProviderEvent }) {
+function EventActions({ event }: { event: ListedProviderEvent }) {
   const action = useProviderEventAction();
   const remove = useDeleteProviderEvent();
   // Cancelling can't be undone, so it takes a second click to confirm.
@@ -100,7 +100,8 @@ function EventActions({ event }: { event: StoredProviderEvent }) {
     return (
       <>
         <span className="self-center text-sm text-ink-soft">
-          Cancel this event? This can&apos;t be undone.
+          Cancel this event? This can&apos;t be undone
+          {event.spots_taken > 0 ? ", and parents who reserved are told" : ""}.
         </span>
         <Button
           size="sm"
@@ -150,14 +151,18 @@ function EventActions({ event }: { event: StoredProviderEvent }) {
         </>
       ) : (
         <>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() => run("unpublish")}
-          >
-            Unpublish
-          </Button>
+          {/* Once parents have reserved, the event can only be cancelled —
+              unpublishing would make it vanish from their calendars. */}
+          {event.spots_taken === 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => run("unpublish")}
+            >
+              Unpublish
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"

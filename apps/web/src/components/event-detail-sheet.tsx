@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { cn } from "@repo/ui/lib/utils";
 import {
   Sheet,
@@ -13,7 +14,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@repo/ui/components/popover";
-import type { StoredEvent } from "@/lib/types/events";
+import type { ReservedEventInfo, StoredEvent } from "@/lib/types/events";
+import { describeChanges } from "@/lib/utils/event-changes";
 import { downloadIcs, openGoogleCalendar } from "@/lib/utils/calendar-export";
 import { formatTime } from "@/lib/utils/date";
 import { CALENDAR_LOCALE } from "@/lib/config/calendar";
@@ -23,6 +25,10 @@ import {
   useEvents,
   useToggleActionItem,
 } from "@/lib/queries/events";
+import {
+  useCancelReservation,
+  useMarkReservationSeen,
+} from "@/lib/queries/provider-events";
 import ActionItemRow from "@/components/action-item-row";
 
 export default function EventDetailSheet() {
@@ -42,13 +48,21 @@ export default function EventDetailSheet() {
         side="right"
         className="w-full bg-surface p-0 sm:max-w-md"
       >
-        {event && (
-          <EventDetailContent
-            key={event.id}
-            event={event}
-            onClose={() => setOpenEventId(null)}
-          />
-        )}
+        {event &&
+          (event.reservation ? (
+            <ReservedEventContent
+              key={event.id}
+              event={event}
+              reservation={event.reservation}
+              onClose={() => setOpenEventId(null)}
+            />
+          ) : (
+            <EventDetailContent
+              key={event.id}
+              event={event}
+              onClose={() => setOpenEventId(null)}
+            />
+          ))}
       </SheetContent>
     </Sheet>
   );
@@ -208,6 +222,179 @@ function EventDetailContent({
             className="inline-flex h-7 items-center justify-center rounded-sm border border-hairline px-3 text-[11px] font-medium text-ink-soft transition-colors hover:bg-surface-alt hover:text-ink"
           >
             {confirmDelete && !deleting ? "Cancel" : "Close"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const sheetButton =
+  "inline-flex h-7 items-center justify-center rounded-sm border px-3 text-[11px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50";
+
+/** A provider's event the parent reserved. Read-only: the provider owns the
+ *  details, the parent can only give the spot back. */
+function ReservedEventContent({
+  event,
+  reservation,
+  onClose,
+}: {
+  event: StoredEvent;
+  reservation: ReservedEventInfo;
+  onClose: () => void;
+}) {
+  const cancelMut = useCancelReservation();
+  const { mutate: markSeen } = useMarkReservationSeen();
+  const [confirmCancel, setConfirmCancel] = useState(false);
+
+  // Worked out once, when the sheet opens. Opening also acknowledges the
+  // change, which clears `updated` on the next fetch — the explanation has to
+  // outlive that for as long as the sheet stays open.
+  const [changes] = useState(() =>
+    reservation.updated && reservation.previous
+      ? describeChanges(reservation.previous, {
+          ...event,
+          status: reservation.cancelled ? "cancelled" : "published",
+        })
+      : [],
+  );
+  const [wasUpdated] = useState(reservation.updated);
+  useEffect(() => {
+    if (wasUpdated) markSeen(event.id);
+  }, [wasUpdated, markSeen, event.id]);
+
+  const date = new Date(event.start_time);
+  const dayLabel = date.toLocaleDateString(CALENDAR_LOCALE, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  const timeLabel = event.is_all_day
+    ? "All day"
+    : `${formatTime(event.start_time)}${event.end_time ? ` – ${formatTime(event.end_time)}` : ""}`;
+  const cancelling = cancelMut.isPending;
+
+  function handleCancel() {
+    if (!confirmCancel) {
+      setConfirmCancel(true);
+      return;
+    }
+    cancelMut.mutate(event.id, { onSuccess: onClose });
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-hairline px-6 pb-5 pt-6">
+        <div className="text-eyebrow-accent">{dayLabel}</div>
+        <div className="mt-1 font-mono text-[13px] text-ink-soft">
+          {timeLabel}
+        </div>
+        <SheetTitle asChild>
+          <h2
+            className={cn(
+              "mt-3 text-title text-ink",
+              reservation.cancelled && "line-through decoration-ink-mute",
+            )}
+          >
+            {event.title}
+          </h2>
+        </SheetTitle>
+        <SheetDescription className="sr-only">
+          Event details for {event.title}
+        </SheetDescription>
+        {event.location && (
+          <div className="mt-2 text-meta">{event.location}</div>
+        )}
+      </div>
+
+      {(reservation.cancelled || changes.length > 0) && (
+        <div
+          role="status"
+          className={cn(
+            "border-b border-hairline px-6 py-4 text-body",
+            reservation.cancelled
+              ? "bg-destructive/10 text-destructive"
+              : "bg-accent-soft text-ink",
+          )}
+        >
+          <div className="text-eyebrow">
+            {reservation.cancelled ? "Cancelled" : "Updated by the organiser"}
+          </div>
+          {changes.length > 0 ? (
+            <ul className="mt-1 space-y-0.5">
+              {changes.map((change) => (
+                <li key={change}>{change}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1">The organiser cancelled this event.</p>
+          )}
+        </div>
+      )}
+
+      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+        <Field label="Organiser">
+          <Link
+            href={`/discover/${reservation.provider_id}`}
+            onClick={onClose}
+            className="text-body text-primary underline underline-offset-4"
+          >
+            {reservation.provider_name ?? "View organiser"}
+          </Link>
+        </Field>
+        <Field label="Your reservation">
+          <span className="text-body text-ink">
+            {reservation.spots} {reservation.spots === 1 ? "spot" : "spots"}
+          </span>
+        </Field>
+        <Field label="Type">
+          <span className="font-mono text-[11px] capitalize text-ink">
+            {event.event_type}
+          </span>
+        </Field>
+        {event.description && (
+          <Field label="Notes">
+            <p className="text-body text-ink-soft">{event.description}</p>
+          </Field>
+        )}
+      </div>
+
+      <div className="border-t border-hairline bg-background px-6 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={handleCancel}
+            disabled={cancelling}
+            className={cn(
+              sheetButton,
+              confirmCancel
+                ? "border-destructive bg-destructive/10 text-destructive hover:bg-destructive/20"
+                : "border-hairline text-ink-mute hover:border-destructive hover:text-destructive",
+            )}
+          >
+            {cancelling
+              ? "Cancelling…"
+              : confirmCancel
+                ? reservation.cancelled
+                  ? "Confirm remove"
+                  : "Confirm — give up my spot"
+                : reservation.cancelled
+                  ? "Remove from calendar"
+                  : "Cancel reservation"}
+          </button>
+          <button
+            type="button"
+            onClick={
+              confirmCancel && !cancelling
+                ? () => setConfirmCancel(false)
+                : onClose
+            }
+            className={cn(
+              sheetButton,
+              "border-hairline text-ink-soft hover:bg-surface-alt hover:text-ink",
+            )}
+          >
+            {confirmCancel && !cancelling ? "Keep it" : "Close"}
           </button>
         </div>
       </div>

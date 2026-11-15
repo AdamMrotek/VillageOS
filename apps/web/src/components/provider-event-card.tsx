@@ -1,10 +1,9 @@
-import { CALENDAR_LOCALE } from "@/lib/config/calendar";
 import { eventTypeStyle } from "@/lib/event-styles";
 import type {
+  ListedProviderEvent,
   ProviderEventStatus,
-  StoredProviderEvent,
 } from "@/lib/types/provider-events";
-import { formatTime } from "@/lib/utils/date";
+import { formatEventWhen } from "@/lib/utils/event-changes";
 
 const STATUS_LABELS: Record<ProviderEventStatus, string> = {
   draft: "Draft",
@@ -28,22 +27,28 @@ export function EventStatusBadge({ status }: { status: ProviderEventStatus }) {
   );
 }
 
-/** "Fri 20 Nov · 16:00 – 17:00", or just the date for an all-day event. */
-export function formatEventWhen(
-  event: Pick<StoredProviderEvent, "start_time" | "end_time" | "is_all_day">,
-): string {
-  const start = new Date(event.start_time);
-  const day = start.toLocaleDateString(CALENDAR_LOCALE, {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-  if (event.is_all_day) return `${day} · All day`;
-  const time = event.end_time
-    ? `${formatTime(start)} – ${formatTime(event.end_time)}`
-    : formatTime(start);
-  return `${day} · ${time}`;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** Spots still free, or null when the event has no limit. */
+export function spotsLeft(event: ListedProviderEvent): number | null {
+  return event.capacity === null
+    ? null
+    : Math.max(0, event.capacity - event.spots_taken);
+}
+
+/** What a parent reads: how many spots they could still take. */
+function spotsLeftLabel(event: ListedProviderEvent): string {
+  const left = spotsLeft(event);
+  if (left === null) return "Unlimited spots";
+  if (left === 0) return "Full";
+  return `${plural(left, "spot")} left`;
+}
+
+/** What the organiser reads: how many spots parents have taken. */
+function reservedLabel(event: ListedProviderEvent): string {
+  return event.capacity === null
+    ? `${event.spots_taken} reserved · unlimited spots`
+    : `${event.spots_taken} of ${plural(event.capacity, "spot")} reserved`;
 }
 
 /** One event as a parent sees it on a provider's page. `footer` is where the
@@ -53,7 +58,7 @@ export default function ProviderEventCard({
   showStatus = false,
   footer,
 }: {
-  event: StoredProviderEvent;
+  event: ListedProviderEvent;
   /** Show the draft/published badge (owner view). A cancelled badge always shows. */
   showStatus?: boolean;
   footer?: React.ReactNode;
@@ -79,9 +84,7 @@ export default function ProviderEventCard({
         <p className="mt-2 text-sm text-ink-soft">{event.description}</p>
       )}
       <p className="mt-2 text-xs text-ink-mute">
-        {event.capacity === null
-          ? "Unlimited spots"
-          : `${event.capacity} ${event.capacity === 1 ? "spot" : "spots"}`}
+        {showStatus ? reservedLabel(event) : spotsLeftLabel(event)}
       </p>
       {footer && <div className="mt-3 flex flex-wrap gap-2">{footer}</div>}
     </article>

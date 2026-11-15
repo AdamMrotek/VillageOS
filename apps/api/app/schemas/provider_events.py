@@ -19,6 +19,14 @@ class ProviderEventInput(EventCore):
     capacity: int | None = Field(None, gt=0, description="Spots available; null = unlimited")
 
 
+class ProviderEventUpdate(ProviderEventInput):
+    """An edit to an existing event. `notify_attendees` is the "Notify
+    attendees" box on the edit form: unticked, a time or place change still
+    shows as "Updated" in the app but queues no email."""
+
+    notify_attendees: bool = True
+
+
 class StoredProviderEvent(ProviderEventInput):
     model_config = ConfigDict(extra="ignore")
 
@@ -28,3 +36,11 @@ class StoredProviderEvent(ProviderEventInput):
     version: int
     created_at: datetime
     updated_at: datetime
+
+
+class ListedProviderEvent(StoredProviderEvent):
+    """An event in a listing, with how full it is. `my_spots` is the caller's
+    own confirmed reservation (0 = not reserved)."""
+
+    spots_taken: int = 0
+    my_spots: int = 0

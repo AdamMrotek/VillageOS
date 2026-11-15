@@ -54,6 +54,12 @@ security** (ADR-010).
   contained *within* freeform event text. Not separately structured, categorised,
   or profiled.
 - Provider users additionally store profile/cover images (AWS S3).
+- Reservations: which provider events a parent has reserved and how many
+  spots. The provider sees the **count** of spots taken, not who reserved.
+- Event-change emails: the parent's email address and the changed event's
+  title, time and place are sent through **Amazon SES** (a new sub-processor,
+  `eu-north-1`) once sending is switched on. Parents can turn these off in
+  Settings.
 - Analytics: first-party product analytics stored in our own Supabase database
   (no third-party analytics processor, ADR-023), keyed to the stable Supabase
   user id — no device cookie/localStorage.
@@ -135,3 +141,7 @@ display the user's calendar. No advertising, no profiling, no secondary use.
 2. Enable **2FA** on the owner's admin/provider accounts.
 3. **Sign off** section 7 (owner).
 4. Pay the **ICO data protection fee** (~£40/yr) — see checklist Tier 1.
+5. Before switching event-change emails on: add **Amazon SES** to the privacy
+   notice's sub-processor list.
+6. Before showing providers **who** reserved (names): add consent copy on the
+   Reserve button and assess it here.

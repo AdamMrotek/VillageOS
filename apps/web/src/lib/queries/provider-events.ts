@@ -4,8 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-fetch";
+import { EVENTS_KEY } from "@/lib/queries/events";
 import type {
+  ListedProviderEvent,
   ProviderEventInput,
+  ProviderEventUpdate,
   StoredProviderEvent,
 } from "@/lib/types/provider-events";
 
@@ -17,7 +20,7 @@ export function useMyProviderEvents() {
   return useQuery({
     queryKey: MY_PROVIDER_EVENTS_KEY,
     queryFn: () =>
-      apiClient<StoredProviderEvent[]>("/api/providers/me/events"),
+      apiClient<ListedProviderEvent[]>("/api/providers/me/events"),
   });
 }
 
@@ -26,7 +29,7 @@ export function useProviderEvents(providerId: string) {
   return useQuery({
     queryKey: [...PROVIDER_EVENTS_KEY, providerId],
     queryFn: () =>
-      apiClient<StoredProviderEvent[]>(`/api/providers/${providerId}/events`),
+      apiClient<ListedProviderEvent[]>(`/api/providers/${providerId}/events`),
     enabled: !!providerId,
   });
 }
@@ -49,6 +52,8 @@ function useInvalidateEvents() {
   return () => {
     qc.invalidateQueries({ queryKey: MY_PROVIDER_EVENTS_KEY });
     qc.invalidateQueries({ queryKey: PROVIDER_EVENTS_KEY });
+    // A reserved event shows on the parent's calendar straight from this row.
+    qc.invalidateQueries({ queryKey: EVENTS_KEY });
   };
 }
 
@@ -69,7 +74,7 @@ export function useCreateProviderEvent() {
 export function useUpdateProviderEvent() {
   const invalidate = useInvalidateEvents();
   return useMutation({
-    mutationFn: ({ id, event }: { id: string; event: ProviderEventInput }) =>
+    mutationFn: ({ id, event }: { id: string; event: ProviderEventUpdate }) =>
       apiClient<StoredProviderEvent>(`/api/providers/me/events/${id}`, {
         method: "PUT",
         body: JSON.stringify(event),
@@ -106,5 +111,49 @@ export function useDeleteProviderEvent() {
     onSettled: invalidate,
     meta: { suppressErrorToast: true },
     onError: toastError("Couldn't delete the event. Please try again."),
+  });
+}
+
+/** Reserve a spot, or change how many are held. */
+export function useReserveSpot() {
+  const invalidate = useInvalidateEvents();
+  return useMutation({
+    mutationFn: ({ eventId, spots }: { eventId: string; spots: number }) =>
+      apiClient(`/api/provider-events/${eventId}/reservation`, {
+        method: "PUT",
+        body: JSON.stringify({ spots }),
+      }),
+    // Also refetch on failure: a 409 means the spots on screen are stale.
+    onSettled: invalidate,
+    meta: { suppressErrorToast: true },
+    onError: toastError("Couldn't reserve a spot. Please try again."),
+  });
+}
+
+export function useCancelReservation() {
+  const invalidate = useInvalidateEvents();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiClient(`/api/provider-events/${eventId}/reservation`, {
+        method: "DELETE",
+      }),
+    onSettled: invalidate,
+    meta: {
+      errorMessage: "Couldn't cancel the reservation. Please try again.",
+    },
+  });
+}
+
+/** Acknowledge the provider's latest change (clears the "Updated" badge).
+ *  Fired when the parent opens the event; a failure just leaves the badge. */
+export function useMarkReservationSeen() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) =>
+      apiClient(`/api/provider-events/${eventId}/reservation/seen`, {
+        method: "POST",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: EVENTS_KEY }),
+    meta: { suppressErrorToast: true },
   });
 }

@@ -15,3 +15,9 @@ class Profile(BaseModel):
     role: Role
     full_name: str | None = None
     created_at: datetime
+
+
+class Preferences(BaseModel):
+    """Settings a user controls about how VillageOS contacts them."""
+
+    event_emails: bool

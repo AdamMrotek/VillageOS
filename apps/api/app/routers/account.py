@@ -1,9 +1,11 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from supabase import Client
 
 from app.core.auth import AuthContext, get_auth
-from app.core.db import get_admin_db
+from app.core.db import get_admin_db, get_user_db
+from app.schemas.profiles import Preferences
 from app.services import provider_media
 
 logger = logging.getLogger(__name__)
@@ -73,3 +75,28 @@ async def delete_account(
         },
     )
     return Response(status_code=204)
+
+
+@router.get("/preferences", response_model=Preferences)
+async def get_preferences(
+    auth: AuthContext = Depends(get_auth),
+    db: Client = Depends(get_user_db),
+):
+    rows = db.table("profiles").select("event_emails").eq("id", auth.user["sub"]).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return rows[0]
+
+
+@router.put("/preferences", response_model=Preferences)
+async def update_preferences(
+    body: Preferences,
+    auth: AuthContext = Depends(get_auth),
+    db: Client = Depends(get_user_db),
+):
+    """Runs as the caller: RLS limits it to their own row, and column
+    privileges limit it to the fields a user may change about themselves."""
+    rows = db.table("profiles").update(body.model_dump()).eq("id", auth.user["sub"]).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return rows[0]

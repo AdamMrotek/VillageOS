@@ -74,9 +74,11 @@ Why it's built this way:
 
 ## Provider events
 
-Phase 1 of [docs/PROVIDER_EVENTS_PLAN.md](docs/PROVIDER_EVENTS_PLAN.md): a
-provider creates events and publishes them to their public page. Reserving a
-spot is Phase 2 and is not built.
+Phases 1–3 of [docs/PROVIDER_EVENTS_PLAN.md](docs/PROVIDER_EVENTS_PLAN.md): a
+provider creates events and publishes them to their public page; parents
+reserve spots and see the event on their calendar; when the provider changes or
+cancels it, parents are told in the app and by email. See
+[Reservations](#reservations) and [Change propagation](#change-propagation).
 
 ### Data model
 
@@ -87,9 +89,9 @@ spot is Phase 2 and is not built.
 | `id` | PK. |
 | `provider_id` | FK → `provider_profiles(user_id)` `ON DELETE CASCADE`. An event needs a provider page to appear on. |
 | `title`, `event_type`, `start_time`, `end_time`, `is_all_day`, `location`, `description` | Same shape and limits as `events` (title ≤60, description ≤240, end after start). Shared in the API through `EventCore`. |
-| `capacity` | Positive integer, or `NULL` for unlimited. Stored and shown; not enforced until reservations exist. |
+| `capacity` | Positive integer, or `NULL` for unlimited. Enforced by `reserve_spot()`; can't be lowered below the spots already reserved. |
 | `status` | `provider_event_status` enum: `draft`, `published`, `cancelled`. |
-| `version` | Starts at 1. Reserved for change tracking (Phase 3); nothing bumps it yet. |
+| `version` | Starts at 1. Owned by the change-tracking trigger: bumped on each material edit after publishing; a client can't set it. |
 
 It is a separate table from `events` on purpose: `events` rows are private to
 one parent, these are public once published.
@@ -110,7 +112,7 @@ viewing their own public page sees what parents see.
 | From | Action | To |
 | --- | --- | --- |
 | `draft` | publish (start must not be more than a day in the past) | `published` |
-| `published` | unpublish | `draft` |
+| `published` | unpublish (refused once parents have reserved) | `draft` |
 | `published` | cancel | `cancelled` (terminal, not editable) |
 | `draft` | delete | row removed |
 
@@ -130,7 +132,74 @@ in-progress and all-day events visible without knowing the viewer's timezone.
   Without a provider page it links to `/provider` instead.
 - `/provider/events/new`, `/provider/events/[eventId]` — `ProviderEventForm`.
   The edit page reads the event from the cached list.
-- `/discover/[providerId]` — an "Upcoming events" section of `ProviderEventCard`s.
+- `/discover/[providerId]` — an "Upcoming events" section of `ProviderEventCard`s,
+  each with `ReserveAction` (spots picker + Reserve, or "You have N spots
+  reserved" + Cancel).
+
+## Reservations
+
+A reserved event is **not copied** into the parent's `events` table. A
+`reservations` row points at the provider's event and the calendar reads both
+sources live, so a provider's edit is visible on the next fetch.
+
+`reservations` (migration `20261114010000_create_reservations.sql`):
+
+| Column | Notes |
+| --- | --- |
+| `event_id`, `user_id` | Unique together: one reservation per parent per event. |
+| `spots` | 1–10. |
+| `status` | `confirmed` or `cancelled`. Cancelling keeps the row; reserving again re-confirms it. |
+| `seen_version` | The event `version` the parent last acknowledged. |
+
+**Capacity is enforced in the database.** `reserve_spot(event_id, spots)` locks
+the event row, sums the confirmed spots and inserts only if there is room, so
+two parents racing for the last spot produce exactly one reservation. An API
+check could not guarantee that.
+
+**Access.** A parent reads their own reservations and nothing else. All writes
+go through `reserve_spot()`, `cancel_reservation()` and
+`mark_reservation_seen()`; direct `INSERT`/`UPDATE` is revoked, because it would
+bypass the capacity check. A provider sees **how many** spots are taken
+(`provider_event_spots_taken()`), not who took them — showing attendees needs
+consent copy and a DPIA entry first.
+
+**Calendar.** `GET /api/events` returns the parent's own events merged with
+their reserved ones. Each item has `source: "own" | "provider"`; reserved items
+also carry `reservation` (provider id and name, spots, `cancelled`, `updated`,
+and `previous` — the state the parent last saw). They are read-only in the UI.
+
+Demo (anonymous) sessions can't reserve.
+
+## Change propagation
+
+Migration `20261114020000_provider_event_change_propagation.sql`. One trigger on
+`provider_events` does everything that must happen when an event changes, in
+the same transaction as the edit:
+
+1. **Version.** A *material* edit — `start_time`, `end_time`, `is_all_day`,
+   `location`, `status` — to an event that has left draft bumps `version`.
+   Title, description and capacity edits don't.
+2. **History.** The pre-edit values are kept in `provider_event_versions`, so a
+   parent can be shown what changed.
+3. **Outbox.** One `notification_outbox` row per confirmed reservation, unless
+   the provider unticked "Notify attendees". A reservation has at most one
+   pending row, so a burst of edits coalesces.
+
+It also refuses to change a cancelled event, to unpublish an event with
+reservations, or to drop capacity below the spots reserved.
+
+**In the app.** While `reservation.seen_version < event.version` the calendar
+chip shows "Updated" (or "Cancelled", struck through). Opening the event shows
+what changed and acknowledges it.
+
+**By email.** A worker Lambda (`worker_handler.py`, EventBridge, every 5
+minutes) handles pending rows whose event has been quiet for 10 minutes. It
+compares the state the parent was last told about with the state now and sends
+**one** email — or none if the edit was reverted, the parent turned event
+emails off (Settings → Notifications), or they cancelled their reservation.
+Delivery is at-least-once. Sending goes through `app/services/email.py`
+(`EMAIL_PROVIDER`: `none` | `log` | `ses`); it is `none` in production until
+SES is verified — see [INTEGRATIONS.md](INTEGRATIONS.md#amazon-ses--event-change-emails).
 
 ## Category styling
 
@@ -154,10 +223,22 @@ Events, in `apps/api/app/routers/provider_events.py` (same prefix):
 | --- | --- | --- | --- |
 | `GET` | `/me/events` | required | The caller's events, drafts included. |
 | `POST` | `/me/events` | required | Create a draft (`409` without a provider page). |
-| `PUT` | `/me/events/{event_id}` | required | Edit a draft or published event. |
+| `PUT` | `/me/events/{event_id}` | required | Edit a draft or published event. `notify_attendees` (default `true`) controls the change email. |
 | `POST` | `/me/events/{event_id}/publish` · `/unpublish` · `/cancel` | required | Change status. |
 | `DELETE` | `/me/events/{event_id}` | required | Delete a draft. |
 | `GET` | `/{provider_id}/events` | required | A provider's upcoming published and cancelled events. |
+
+Both listings include `spots_taken` and the caller's own `my_spots`.
+
+Reservations, in `apps/api/app/routers/reservations.py`, prefix `/api/provider-events`:
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `PUT` | `/{event_id}/reservation` | required | Reserve, re-confirm or change the spot count (`409` when full). |
+| `DELETE` | `/{event_id}/reservation` | required | Cancel the caller's reservation. |
+| `POST` | `/{event_id}/reservation/seen` | required | Acknowledge the provider's latest change. |
+
+`GET` / `PUT /api/account/preferences` reads and sets `event_emails`.
 
 > `/me` and `/me/cover-upload-url` are declared **before** `/{user_id}` so `me` isn't captured as a path param.
 
@@ -172,6 +253,13 @@ apps/api/app/routers/provider_events.py  # event endpoints
 apps/api/app/services/provider_events.py # event CRUD + status transitions
 apps/api/app/schemas/provider_events.py  # ProviderEventInput (extends EventCore)
 apps/api/tests/test_provider_events.py   # schema + service rules
+apps/api/app/services/reservations.py    # reserve / cancel / calendar merge
+apps/api/app/services/notifications.py   # outbox worker: decide + send
+apps/api/app/services/email.py           # send_email interface (log / SES)
+apps/api/app/services/db_errors.py       # database rule violations → HTTP errors
+apps/api/worker_handler.py               # Lambda entry point for the worker
+supabase/tests/provider_events.sh        # DB tests: race, RLS, trigger, outbox
+e2e/tests/reservations.spec.ts           # reserve → updated → cancelled, in a browser
 apps/api/template.yaml                   # ProviderCover* S3 bucket, OAC, CloudFront
 supabase/migrations/2026060800000*.sql   # table, RLS, image column
 

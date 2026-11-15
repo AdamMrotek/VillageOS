@@ -125,6 +125,12 @@ jobs:
       - name: Start local Supabase stack
         run: supabase start -x studio,imgproxy,edge-runtime,vector,logflare
 
+      # The reservation and change-tracking rules live in Postgres (functions,
+      # a trigger, RLS), so they are tested against the real database — this
+      # job is the one that has it running.
+      - name: Database tests
+        run: bash supabase/tests/provider_events.sh
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:

@@ -2,9 +2,12 @@
 
 import Image from "next/image";
 import { use } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { authUserQuery } from "@repo/ui/hooks/use-auth-user";
 import PageLayout from "@/components/page-layout";
 import { CategoryBadge } from "@/components/provider-card";
 import ProviderEventCard from "@/components/provider-event-card";
+import ReserveAction from "@/components/reserve-action";
 import { useProviderEvents } from "@/lib/queries/provider-events";
 import { useProvider } from "@/lib/queries/providers";
 
@@ -16,6 +19,7 @@ export default function ProviderDetailPage({
   const { providerId } = use(params);
   const { data: provider, isLoading, isError } = useProvider(providerId);
   const { data: events, isError: eventsError } = useProviderEvents(providerId);
+  const { data: user } = useQuery(authUserQuery);
 
   return (
     <PageLayout
@@ -90,7 +94,16 @@ export default function ProviderDetailPage({
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             {events?.map((event) => (
-              <ProviderEventCard key={event.id} event={event} />
+              <ProviderEventCard
+                key={event.id}
+                event={event}
+                footer={
+                  // A provider browsing their own page has nothing to reserve.
+                  event.provider_id === user?.id ? null : (
+                    <ReserveAction event={event} />
+                  )
+                }
+              />
             ))}
           </div>
         </section>

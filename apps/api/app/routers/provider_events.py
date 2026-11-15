@@ -12,13 +12,18 @@ from supabase import Client
 
 from app.core.auth import AuthContext, get_auth
 from app.core.db import get_user_db
-from app.schemas.provider_events import ProviderEventInput, StoredProviderEvent
+from app.schemas.provider_events import (
+    ListedProviderEvent,
+    ProviderEventInput,
+    ProviderEventUpdate,
+    StoredProviderEvent,
+)
 from app.services import provider_events as service
 
 router = APIRouter(prefix="/api/providers", tags=["provider-events"])
 
 
-@router.get("/me/events", response_model=list[StoredProviderEvent])
+@router.get("/me/events", response_model=list[ListedProviderEvent])
 async def list_my_events(
     auth: AuthContext = Depends(get_auth),
     db: Client = Depends(get_user_db),
@@ -38,7 +43,7 @@ async def create_event(
 @router.put("/me/events/{event_id}", response_model=StoredProviderEvent)
 async def update_event(
     event_id: UUID,
-    body: ProviderEventInput,
+    body: ProviderEventUpdate,
     auth: AuthContext = Depends(get_auth),
     db: Client = Depends(get_user_db),
 ):
@@ -82,9 +87,10 @@ async def delete_event(
     return Response(status_code=204)
 
 
-@router.get("/{provider_id}/events", response_model=list[StoredProviderEvent])
+@router.get("/{provider_id}/events", response_model=list[ListedProviderEvent])
 async def list_provider_events(
     provider_id: UUID,
+    auth: AuthContext = Depends(get_auth),
     db: Client = Depends(get_user_db),
 ):
-    return service.list_public_events(db, str(provider_id))
+    return service.list_public_events(db, auth.user["sub"], str(provider_id))
