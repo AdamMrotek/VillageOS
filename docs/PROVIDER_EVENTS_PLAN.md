@@ -7,9 +7,9 @@ here. Where the build differs from this design, the difference is listed under
 [2.1](#21-what-was-built-differently). Open design questions are in
 [section 3](#3-open-items).
 
-Providers create and publish events; parents discover them, reserve a spot, see
-the event on their calendar, and stay up to date when the provider edits or
-cancels it.
+Providers create and publish events; parents discover them, reserve a spot, get
+the event into their own calendar app, and stay up to date when the provider
+edits or cancels it.
 
 Builds on the existing provider feature ([PROVIDERS.md](../PROVIDERS.md)): the
 `provider_profiles` table, `/provider`, `/discover`, `/discover/[providerId]`.
@@ -34,23 +34,43 @@ reads *own events + reserved provider events* live.
 With references, the "update system" shrinks to two jobs:
 
 1. **Telling parents something changed** (in-app badge + email).
-2. **Keeping external calendars current** (Google / Apple / Outlook).
+2. **Keeping their calendar app current** (Google / Apple / Outlook).
 
-### 1.2 External calendars: ICS subscription feed, not the Google Calendar API
+One email does both: it says what changed and carries the calendar update.
 
-Each parent gets one tokenised feed URL (`webcal://…/feed/{token}.ics`) that
-they subscribe to once.
+### 1.2 External calendars: calendar invites by email
 
-- No OAuth scope, no token storage, no Google API verification.
-- Works for Apple and Outlook as well as Google.
-- Updates propagate in place because each event has a stable `UID` and a
-  `SEQUENCE` that increases with every material edit.
-- **Trade-off:** Google polls subscribed feeds roughly every 12–24h. In-app and
-  email are the fast channel; the feed is the eventually-consistent one.
+Reserving a spot emails the parent a **calendar invite** (iCalendar
+`METHOD:REQUEST`, sent as email per RFC 6047). Gmail, Apple Mail and Outlook
+show it with an "Add to calendar" control, and Gmail usually adds it on its own.
+When the provider changes the time, place or status, or the parent cancels, the
+parent is emailed an update to the **same** invite, and their calendar app
+changes the event it already holds.
+
+- **The event stays the same event.** Every invite for a reservation carries
+  the same `UID`, and a `SEQUENCE` that goes up with each one sent. Calendar
+  apps apply an invite only when its `SEQUENCE` is above the last they saw.
+- **Removal** is `METHOD:CANCEL` with the same `UID`: for a provider
+  cancellation and for a reservation the parent cancelled. (In VillageOS a
+  cancelled event stays on the calendar, struck through; the calendar app
+  removes it or marks it cancelled, depending on the app.)
+- **The organiser is the sender.** Gmail only applies updates from the
+  invite's `ORGANIZER`, so it is the from-address,
+  `events@notify.villageos.co.uk`. Invites are sent as already accepted with
+  `RSVP=FALSE`: nothing reads replies.
+- No OAuth scope, no token storage, no Google API verification, nothing hosted
+  for a calendar app to fetch. Works with any mail client that understands
+  iCalendar.
+- **Fast:** an invite goes out within a minute of reserving; an update within
+  about ten minutes of the provider's last edit (1.5.1).
+- **Trade-offs:** one-way (edits made in the calendar app don't come back); a
+  parent who turns these emails off gets no invites and no updates; title and
+  description edits don't send an update (see section 3).
 
 The existing link-based "Add to Google Calendar" export
 (`apps/web/src/lib/utils/calendar-export.ts`) stays as a one-off for a parent's
-own events. A real Google API sync is deferred (Phase 5).
+own events. A real Google API sync is deferred (Phase 5). Decision record:
+ADR-026.
 
 ### 1.3 Data model
 
@@ -84,6 +104,8 @@ RLS:
 | `spots` | `int`, default 1 |
 | `status` | `confirmed` \| `cancelled` |
 | `seen_version` | The event `version` the parent last acknowledged |
+| `invite_sequence` | `SEQUENCE` for the next calendar invite; +1 per invite sent, never reset |
+| `invite_version` | The event `version` the parent's calendar was last sent; `NULL` = nothing in their calendar |
 | `created_at` | Timestamp |
 
 Unique on `(event_id, user_id)`.
@@ -94,14 +116,6 @@ RLS:
 - Providers read reservations for their own events.
 - No direct `INSERT` — reservations are only created through `reserve_spot`.
 
-#### `calendar_feed_tokens` (Phase 4)
-
-| Column | Notes |
-| --- | --- |
-| `user_id` | PK, FK → `auth.users(id)` `ON DELETE CASCADE` |
-| `token` | Random, unguessable, unique; regenerating it revokes the old URL |
-| `created_at` | Timestamp |
-
 ### 1.4 Reserving a spot
 
 A Postgres function `reserve_spot(event_id, spots)`:
@@ -110,6 +124,9 @@ A Postgres function `reserve_spot(event_id, spots)`:
 2. Rejects if the event is not `published` or is in the past.
 3. Sums confirmed `spots`; rejects if `capacity` would be exceeded.
 4. Inserts (or re-confirms) the reservation with `seen_version = version`.
+5. Queues the calendar invite (an outbox row, due at once; see 1.5.1).
+
+`cancel_reservation(event_id)` likewise queues the invite's withdrawal.
 
 Capacity must be enforced in the database. A check in the API layer cannot
 prevent two parents racing for the last spot.
@@ -128,33 +145,43 @@ emails than there are edits.
   `seen_version = version`.
 - **Cancellation:** the provider sets `status = 'cancelled'`. The event stays on
   parents' calendars, struck through.
-- **ICS feed:** `SEQUENCE` = `version`; cancelled events emit
-  `STATUS:CANCELLED`.
-- **Email (only when it matters):** see 1.5.1.
+- **Email with a calendar update (only when it matters):** see 1.5.1.
 
-#### 1.5.1 Email notifications: outbox + debounce
+#### 1.5.1 Calendar invite emails: outbox + debounce
 
-Email is sent only for cancellations and time or location changes, and only
-when all of these hold:
+Each reservation gets these emails, each carrying a calendar invite:
+
+| Email | When | Invite |
+| --- | --- | --- |
+| Booked | The parent reserves | `REQUEST` |
+| Updated | Time or location changed | `REQUEST`, next `SEQUENCE` |
+| Cancelled | The provider cancelled | `CANCEL` |
+| Reservation cancelled | The parent cancelled, after the invite went out | `CANCEL` |
+
+An update or cancellation is sent only when all of these hold:
 
 - The provider left "Notify attendees" ticked on the edit form (default on).
-- The parent has not turned event emails off in settings.
-- The state after the quiet period still differs from what the parent last
-  saw (an edit that is reverted sends nothing).
+  Unticked, the calendar app catches up on the next notified change.
+- The parent has not turned these emails off in settings.
+- The state after the quiet period still differs from what the parent's
+  calendar was last sent (an edit that is reverted sends nothing).
 
 Mechanism — a **transactional outbox**:
 
-1. The provider's edit and the `notification_outbox` rows (one per confirmed
-   reservation) are written in the same database transaction, so a notification
-   is never lost and never sent for an edit that rolled back. If a pending row
-   already exists for that reservation, it is updated instead of duplicated.
-2. A scheduled worker Lambda (EventBridge, every 5 minutes) picks up pending
-   rows whose event has been quiet for 10+ minutes.
-3. It sends **one** email per parent, diffing the version the parent was last
-   notified about against the current state, then marks the row sent.
-4. Failed rows stay pending and retry on the next run, up to 5 tries. After
-   that the row is dead-lettered: set to `failed` with the last error, and
-   left in the table for someone to look at.
+1. The change and its `notification_outbox` row are written in the same
+   database transaction, so a notification is never lost and never sent for a
+   change that rolled back: `reserve_spot()` and `cancel_reservation()` queue a
+   row due at once; a provider's material edit queues one per confirmed
+   reservation, due 10 minutes later. If a pending row already exists for that
+   reservation, it is updated (and its due time moved) instead of duplicated.
+2. A scheduled worker Lambda (EventBridge, every minute) picks up due rows.
+3. The worker **reconciles** rather than replays: it compares what the
+   parent's calendar was last sent (`reservations.invite_version`) with what it
+   should show now, sends at most **one** email to close the gap, records the
+   new `invite_version` and `invite_sequence`, and marks the row sent.
+4. Failed rows stay pending and retry on the next run, up to 25 tries (about 25
+   minutes). After that the row is dead-lettered: set to `failed` with the last
+   error, and left in the table for someone to look at.
 
 `notification_outbox`:
 
@@ -163,9 +190,9 @@ Mechanism — a **transactional outbox**:
 | `id` | `uuid` PK |
 | `reservation_id` | FK → `reservations(id)` `ON DELETE CASCADE` |
 | `event_id` | FK → `provider_events(id)` |
-| `from_version` | Version the parent was last emailed about (or reserved at) |
 | `status` | `pending` \| `sent` \| `skipped` \| `failed` (dead-lettered) |
-| `pending_since`, `sent_at` | Timestamps; `pending_since` resets on each new edit |
+| `due_at` | When the worker may handle it: at once for a reservation change, 10 minutes after the last edit for a provider change |
+| `pending_since`, `sent_at` | Timestamps; `pending_since` resets each time the row is queued again |
 | `attempts`, `last_error`, `failed_at` | Failed tries so far, the latest error, and when the row was dead-lettered |
 
 At most one `pending` row per reservation (partial unique index), which is what
@@ -178,7 +205,10 @@ the outbox gives debounce, retries and idempotency with one table and one
 small Lambda.
 
 **Sending provider: Amazon SES**, called from the worker with `boto3`, behind a
-small `send_email` interface so the provider can be swapped. Resend stays as
+small `send_email` interface so the provider can be swapped. The email is sent
+as raw MIME (`text/plain` and `text/calendar; method=…` as alternatives, plus
+the invite as an `invite.ics` attachment), since SES's simple format can't
+carry a calendar part. Resend stays as
 Supabase's SMTP for auth emails only. Reasons: SES has no monthly fee and costs
 roughly $0.10 per 1,000 emails, while Resend's free tier has a 100/day cap that
 a single large cancellation would exceed (prices from memory — verify before
@@ -200,7 +230,7 @@ Every email carries an unsubscribe link to the notification setting.
 
 ### 1.6 Calendar merge
 
-`GET /api/events` returns the merged feed. Each item carries
+`GET /api/events` returns the merged list. Each item carries
 `source: "own" | "provider"`. Provider-sourced items also carry the provider id
 and name, the reservation id, and an `updated` flag. In the UI they are
 read-only, with "Cancel reservation" and a link to the provider page.
@@ -216,8 +246,9 @@ read-only, with "Cancel reservation" and a link to the provider page.
 
 - Showing a parent's name to a provider is new data sharing: add a DPIA entry
   and consent copy on the Reserve button.
-- The ICS feed is an unauthenticated URL that carries family calendar data: the
-  token must be unguessable and revocable, and the feed needs a DPIA entry.
+- Calendar invites put the event details into the parent's own mailbox and
+  calendar app (their provider, not our processor), sent through SES: covered
+  by the SES entry in the DPIA, plus a line in the privacy notice.
 
 ---
 
@@ -282,16 +313,24 @@ Split in two so the in-app half ships without waiting on SES approval.
   vanish from calendars — cancel it instead); capacity can't drop below the
   spots reserved; a cancelled event can't be changed.
 
-### Phase 4 — External calendar sync (ICS feed)
+### Phase 4 — Calendar invites by email
 
-- Migration: `calendar_feed_tokens`.
-- API: public `GET /api/calendar/feed/{token}.ics` with stable `UID`,
-  `SEQUENCE`, `STATUS:CANCELLED`.
-- UI: Settings section "Subscribe in Google / Apple Calendar" with
-  regenerate-link.
+Builds on 3b: same outbox, worker and SES sender.
+
+- Migration: `invite_sequence` and `invite_version` on `reservations`;
+  `due_at` on the outbox; `reserve_spot()` and `cancel_reservation()` queue a
+  row.
+- API: iCalendar invite builder (`REQUEST` / `CANCEL`, stable `UID`,
+  `SEQUENCE`, organiser = sender); raw MIME email with the calendar part; the
+  worker reconciles each reservation's calendar (1.5.1) and runs every minute.
+- UI: Reserve copy says an invite is coming; the Settings email toggle says
+  that turning it off stops calendar updates; the provider's "Notify
+  attendees" copy says it updates calendars.
 - Docs: DPIA, INTEGRATIONS.md, PROVIDERS.md, new ADR.
-- **Done when:** a subscribed Google Calendar reflects a provider edit without
-  the parent doing anything.
+- **Done when:** a real Gmail and a real iCloud address each receive the
+  invite on reserving, see the same event update in place when the provider
+  moves it, and lose it when the reservation is cancelled. Testable in the SES
+  sandbox (verified recipients), before production access.
 
 ### Phase 5 — Later
 
@@ -315,8 +354,10 @@ real two-way Google Calendar API sync.
 - Should emails be limited to events starting soon (for example within 14
   days), with distant changes left to the in-app badge? (Assumed: no limit for
   now.)
-- Should own events be included in the ICS feed, or only reserved provider
-  events? (Assumed: both.)
+- **Title and description edits** don't bump `version`, so they send no
+  invite update and the calendar app keeps the old title. Should a title
+  change count as material? It would also show the "Updated" badge and send an
+  email. (Assumed: no, for now.)
 - Reservation cut-off: can a parent reserve or cancel right up to start time?
   (Assumed: yes.)
 

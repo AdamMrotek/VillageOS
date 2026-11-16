@@ -9,11 +9,11 @@ from typing import Any
 from dotenv import load_dotenv
 
 from app.core.logging import configure_logging
-from app.services import notifications
+from app.notifications import worker
 
 load_dotenv()
 configure_logging()
 
 
 def handler(event: Any, context: Any) -> dict[str, int]:
-    return notifications.run()
+    return worker.run()

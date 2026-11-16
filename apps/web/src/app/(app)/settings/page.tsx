@@ -32,7 +32,7 @@ export default function SettingsPage() {
   );
 }
 
-/** Where the "Turn these emails off" link in an event-change email lands. */
+/** Where the "Turn these emails off" link in a reserved-event email lands. */
 function NotificationSettings() {
   const { data: preferences } = usePreferences();
   const update = useUpdatePreferences();
@@ -50,10 +50,13 @@ function NotificationSettings() {
           className="mt-0.5 bg-surface"
         />
         <span>
-          <span className="block text-body text-ink">Event change emails</span>
+          <span className="block text-body text-ink">
+            Calendar invites for reserved events
+          </span>
           <span className="block text-sm text-ink-soft">
-            Email me when an event I reserved is cancelled or its time or
-            location changes. Changes always show in your calendar.
+            Email me a calendar invite when I reserve an event, and an update
+            when it is cancelled or its time or place changes. Turned off, your
+            calendar app stops updating; changes always show in VillageOS.
           </span>
         </span>
       </label>

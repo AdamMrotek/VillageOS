@@ -82,11 +82,17 @@ are documented in [PROVIDERS.md](PROVIDERS.md#provider-events).
 
 ### `reservations`, `provider_event_versions`, `notification_outbox`
 
-Reserving a provider's event and telling parents when it changes
+Reserving a provider's event, telling parents when it changes, and keeping
+the calendar invite in their own calendar app current
 (`20261114010000_create_reservations.sql`,
-`20261114020000_provider_event_change_propagation.sql`). The rules — capacity,
-versioning, the email outbox — live in Postgres functions and a trigger, not in
-the API. See [PROVIDERS.md](PROVIDERS.md#reservations).
+`20261114020000_provider_event_change_propagation.sql`,
+`20261115000000_notification_outbox_retry_limit.sql`,
+`20261116000000_calendar_invites.sql`). The rules — capacity, versioning,
+queueing invites and their updates in the outbox — live in Postgres functions
+and a trigger, not in the API. `reservations.invite_sequence` and
+`invite_version` record what each parent's calendar was last sent. See
+[PROVIDERS.md](PROVIDERS.md#reservations) and
+[PROVIDERS.md](PROVIDERS.md#calendar-invites).
 
 ### `profiles`
 

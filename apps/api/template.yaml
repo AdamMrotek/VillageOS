@@ -32,7 +32,7 @@ Parameters:
     Type: String
     Default: http://localhost:3000
 
-  # Event-change emails (docs/PROVIDER_EVENTS_PLAN.md, phase 3b). Leave at
+  # Calendar invite emails (docs/PROVIDER_EVENTS_PLAN.md, phases 3b and 4). Leave at
   # `none` until the SES identity below is verified and out of the sandbox: the
   # worker then runs but sends nothing and leaves the outbox pending.
   EmailProvider:
@@ -109,10 +109,10 @@ Resources:
       LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
       RetentionInDays: 7
 
-  # ---- Notification worker: emails parents when a reserved event changes ----
-  # Not behind the API: EventBridge invokes it every 5 minutes. It reads the
-  # notification_outbox table, waits for each event to go quiet, and sends at
-  # most one email per parent (app/services/notifications.py).
+  # ---- Notification worker: calendar invites for reserved events ----
+  # Not behind the API: EventBridge invokes it every minute. It reads the
+  # notification_outbox table and emails each parent the invite, or the update
+  # to it, that brings their calendar in line (app/notifications/worker.py).
   NotificationWorkerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -123,7 +123,9 @@ Resources:
       Policies:
         - Statement:
             - Effect: Allow
-              Action: ses:SendEmail
+              # Invites go out as raw MIME (SES v2 SendEmail, Content.Raw).
+              # SendRawEmail is listed too in case IAM checks the v1 action.
+              Action: [ses:SendEmail, ses:SendRawEmail]
               Resource: !Sub 'arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${SesIdentity}'
       Environment:
         Variables:
@@ -134,11 +136,11 @@ Resources:
           EMAIL_FROM: !Ref EmailFrom
           APP_URL: !Ref AppUrl
       Events:
-        Every5Minutes:
+        EveryMinute:
           Type: Schedule
           Properties:
-            Schedule: rate(5 minutes)
-            Description: Send pending event-change emails
+            Schedule: rate(1 minute)
+            Description: Send due calendar invites and updates
 
   NotificationWorkerLogGroup:
     Type: AWS::Logs::LogGroup

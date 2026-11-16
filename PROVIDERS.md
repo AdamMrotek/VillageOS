@@ -150,6 +150,7 @@ sources live, so a provider's edit is visible on the next fetch.
 | `spots` | 1–10. |
 | `status` | `confirmed` or `cancelled`. Cancelling keeps the row; reserving again re-confirms it. |
 | `seen_version` | The event `version` the parent last acknowledged. |
+| `invite_sequence`, `invite_version` | The parent's calendar invite: the `SEQUENCE` the next one carries, and the event version their calendar was last sent (`NULL` = nothing in it). Written by the worker only. See [Calendar invites](#calendar-invites). |
 
 **Capacity is enforced in the database.** `reserve_spot(event_id, spots)` locks
 the event row, sums the confirmed spots and inserts only if there is room, so
@@ -181,9 +182,11 @@ the same transaction as the edit:
    Title, description and capacity edits don't.
 2. **History.** The pre-edit values are kept in `provider_event_versions`, so a
    parent can be shown what changed.
-3. **Outbox.** One `notification_outbox` row per confirmed reservation, unless
-   the provider unticked "Notify attendees". A reservation has at most one
-   pending row, so a burst of edits coalesces.
+3. **Outbox.** One `notification_outbox` row per confirmed reservation, due 10
+   minutes later, unless the provider unticked "Notify attendees". A
+   reservation has at most one pending row, so a burst of edits coalesces.
+   `reserve_spot()` and `cancel_reservation()` queue a row too, due at once
+   (migration `20261116000000_calendar_invites.sql`).
 
 It also refuses to change a cancelled event, to unpublish an event with
 reservations, or to drop capacity below the spots reserved.
@@ -192,18 +195,118 @@ reservations, or to drop capacity below the spots reserved.
 chip shows "Updated" (or "Cancelled", struck through). Opening the event shows
 what changed and acknowledges it.
 
-**By email.** A worker Lambda (`worker_handler.py`, EventBridge, every 5
-minutes) handles pending rows whose event has been quiet for 10 minutes. It
-compares the state the parent was last told about with the state now and sends
-**one** email — or none if the edit was reverted, the parent turned event
-emails off (Settings → Notifications), or they cancelled their reservation.
-Delivery is at-least-once. A row that fails is retried on later runs; after 5
+**By email, into their calendar app.** See [Notifications](#notifications).
+
+## Notifications
+
+Emails to parents about events they reserved. The database queues the work;
+a scheduled worker sends it.
+
+**Queue.** `notification_outbox`: at most one pending row per reservation,
+meaning "this reservation may need an email". Rows are written by the database
+in the same transaction as the change: `reserve_spot()` and
+`cancel_reservation()` queue one due at once; a provider's material edit queues
+one per confirmed reservation, due 10 minutes after their last edit (see
+[Change propagation](#change-propagation)). A row holds no email: the worker
+decides what to send when the row is due, from the state at that moment, so a
+burst of edits becomes one email and a reverted edit none.
+
+**Worker.** A Lambda (`worker_handler.py`, EventBridge, every minute) runs
+`app/notifications/worker.py`. For each due row it resolves the recipient (the
+reservation's owner, if they haven't turned these emails off in Settings →
+Notifications), asks the row's **handler** what to send, sends it, records the
+result and closes the row.
+
+| Module (`apps/api/app/notifications/`) | Does |
+| --- | --- |
+| `worker.py` | The loop, and `HANDLERS`: which handler each kind of row goes to |
+| `outbox.py` | Every database read and write: due rows, recipient, record a send, close a row, count a failure |
+| `calendar_sync.py` | Handler for calendar invites ([below](#calendar-invites)) |
+| `messages.py` | The wording of every email |
+| `types.py` | `Context`, `Recipient`, `Decision` (what a handler returns) |
+
+The invite text is `app/services/ics.py`; sending is `app/services/email.py`
+(`EMAIL_PROVIDER`: `none` | `log` | `ses`). It is `none` in production until
+SES is verified — see [INTEGRATIONS.md](INTEGRATIONS.md#amazon-ses--calendar-invite-emails).
+With `log`, each email and its invite are written to the log (local
+development).
+
+**Delivery** is at-least-once: a crash between sending and recording can repeat
+an email (a repeated invite carries the same `SEQUENCE`, which calendar apps
+treat as the same update). A row that fails is retried on later runs; after 25
 tries it is dead-lettered (`status = 'failed'`, with `last_error`) and logged
-as `notification_dead`. To see the dead letters:
+as `notification_dead`. If the database itself is unreachable the run stops and
+everything stays pending for the next one. To see the dead letters:
 `SELECT id, event_id, attempts, last_error, failed_at FROM notification_outbox WHERE status = 'failed';`
-Sending goes through `app/services/email.py`
-(`EMAIL_PROVIDER`: `none` | `log` | `ses`); it is `none` in production until
-SES is verified — see [INTEGRATIONS.md](INTEGRATIONS.md#amazon-ses--event-change-emails).
+
+### Calendar invites
+
+Reserving emails the parent a calendar invite; a provider's change, or the
+parent cancelling, emails an update to that same invite, which their calendar
+app (Google, Apple, Outlook) applies to the event it already holds. Design:
+[PROVIDER_EVENTS_PLAN.md §1.2 and §1.5.1](docs/PROVIDER_EVENTS_PLAN.md#12-external-calendars-calendar-invites-by-email);
+decision: ADR-026.
+
+`calendar_sync.py` compares what the parent's calendar was last sent
+(`reservations.invite_version`) with what it should show now, and picks at most
+one email:
+
+| Situation | Email (`reason` in the log) | Invite |
+| --- | --- | --- |
+| Confirmed, nothing sent yet | Booked (`booked`) | `REQUEST` |
+| Time or place changed since the last invite | Updated (`updated`), listing what changed | `REQUEST` |
+| Provider cancelled | Cancelled (`cancelled`) | `CANCEL` |
+| Parent cancelled, an invite was sent | Reservation cancelled (`withdrawn`) | `CANCEL` |
+
+Nothing is sent (`reason`) when the calendar is already current
+(`up_to_date`), an edit was reverted (`reverted`), the parent cancelled before
+the invite went out (`not_in_calendar`), the event was cancelled before it did
+(`cancelled_before_invite`), the event is more than a day past (`event_past`),
+or the parent turned these emails off (`opted_out`). After a send the
+reservation records the new `invite_version` and `invite_sequence + 1`.
+
+**The invite.** `UID` is `reservation-{reservation id}@villageos.co.uk`, the
+same for every invite on that reservation, including after cancelling and
+reserving again. `SEQUENCE` is `invite_sequence`. `ORGANIZER` is the
+from-address (`EMAIL_FROM`), because Gmail only applies updates from the
+organiser; the parent is an `ATTENDEE` already accepted, with `RSVP=FALSE`.
+All-day events are written as `VALUE=DATE` on their UK date
+(`app/core/local_time.py`). The email (`to_mime` in `app/services/email.py`)
+carries it twice: as a `text/calendar; method=…` alternative to the text body,
+which Gmail and Outlook act on, and as an `invite.ics` attachment.
+
+### Adding a notification
+
+**Another email in the invite flow** (e.g. resend the invite when the spot
+count changes):
+
+1. `messages.py`: add a `Kind` and its wording in `calendar_email()`.
+2. `calendar_sync.py`: add the rule in `decide()` that picks it.
+3. If something new should queue a row, queue it in the database function or
+   trigger that makes the change, in the same transaction.
+4. Tests in `tests/test_notifications.py`; queueing in
+   `supabase/tests/provider_events.sh`.
+
+**A different notification about a reservation** (e.g. a reminder the day
+before):
+
+1. The first time only: add a `kind` column to `notification_outbox`
+   (default `'calendar'`), select it in `outbox._SELECT`, and include `kind` in
+   the one-pending-row-per-reservation index so kinds don't overwrite each
+   other.
+2. A handler module next to `calendar_sync.py` with
+   `handle(db, row, recipient, ctx) -> Decision`, kept pure where it can be
+   (`decide()` plus a thin `handle()` that loads what it needs through
+   `outbox.py`).
+3. Register it in `worker.HANDLERS` under its kind.
+4. Its wording in `messages.py`.
+5. Something that queues it: a database function or trigger, or for
+   time-based ones, a scheduled step that inserts due rows.
+
+Retries, dead-lettering, the email opt-out and the unsubscribe header come
+from the worker and sender without further work. A notification to someone
+other than the reservation's owner (e.g. the provider) also needs
+`outbox.recipient()` to know who to look up.
 
 ## Category styling
 
@@ -227,7 +330,7 @@ Events, in `apps/api/app/routers/provider_events.py` (same prefix):
 | --- | --- | --- | --- |
 | `GET` | `/me/events` | required | The caller's events, drafts included. |
 | `POST` | `/me/events` | required | Create a draft (`409` without a provider page). |
-| `PUT` | `/me/events/{event_id}` | required | Edit a draft or published event. `notify_attendees` (default `true`) controls the change email. |
+| `PUT` | `/me/events/{event_id}` | required | Edit a draft or published event. `notify_attendees` (default `true`) controls the email that updates parents' calendar invites. |
 | `POST` | `/me/events/{event_id}/publish` · `/unpublish` · `/cancel` | required | Change status. |
 | `DELETE` | `/me/events/{event_id}` | required | Delete a draft. |
 | `GET` | `/{provider_id}/events` | required | A provider's upcoming published and cancelled events. |
@@ -242,7 +345,8 @@ Reservations, in `apps/api/app/routers/reservations.py`, prefix `/api/provider-e
 | `DELETE` | `/{event_id}/reservation` | required | Cancel the caller's reservation. |
 | `POST` | `/{event_id}/reservation/seen` | required | Acknowledge the provider's latest change. |
 
-`GET` / `PUT /api/account/preferences` reads and sets `event_emails`.
+`GET` / `PUT /api/account/preferences` reads and sets `event_emails` (calendar
+invites and their updates).
 
 > `/me` and `/me/cover-upload-url` are declared **before** `/{user_id}` so `me` isn't captured as a path param.
 
@@ -258,11 +362,12 @@ apps/api/app/services/provider_events.py # event CRUD + status transitions
 apps/api/app/schemas/provider_events.py  # ProviderEventInput (extends EventCore)
 apps/api/tests/test_provider_events.py   # schema + service rules
 apps/api/app/services/reservations.py    # reserve / cancel / calendar merge
-apps/api/app/services/notifications.py   # outbox worker: decide + send
-apps/api/app/services/email.py           # send_email interface (log / SES)
+apps/api/app/notifications/              # outbox worker + handlers (see Notifications)
+apps/api/app/services/ics.py             # calendar invite (UID, SEQUENCE, folding)
+apps/api/app/services/email.py           # send_email interface (log / SES), MIME
 apps/api/app/services/db_errors.py       # database rule violations → HTTP errors
 apps/api/worker_handler.py               # Lambda entry point for the worker
-supabase/tests/provider_events.sh        # DB tests: race, RLS, trigger, outbox
+supabase/tests/provider_events.sh        # DB tests: race, RLS, trigger, outbox queueing
 e2e/tests/reservations.spec.ts           # reserve → updated → cancelled, in a browser
 apps/api/template.yaml                   # ProviderCover* S3 bucket, OAC, CloudFront
 supabase/migrations/2026060800000*.sql   # table, RLS, image column

@@ -518,3 +518,33 @@ A bare `/healthz` returns `{"status": "ok"}`. Canonical queries live in `apps/ap
 **Future A/B tests:** if experimentation returns, it starts from a clean base — a new `experiments`-style table, a fresh assignment helper, and a readout — rather than reviving this stack.
 
 ---
+
+## ADR-026 — Reserved events reach parents' calendars as emailed calendar invites
+
+**Decision:** When a parent reserves a provider event, the notification worker emails them an iCalendar invite (`METHOD:REQUEST`, RFC 6047). When the provider changes the time, place or status, or the parent cancels, it emails an update to the same invite (`REQUEST` with a higher `SEQUENCE`, or `CANCEL`), which the parent's calendar app applies to the event it already holds. Sent through Amazon SES by the existing outbox worker. Design in PROVIDER_EVENTS_PLAN.md §1.2 and §1.5.1; behaviour in PROVIDERS.md → Calendar invites.
+
+**Alternatives considered:**
+- **Google Calendar API (OAuth, `calendar.events`).** Instant, but Google only, needs Google app verification and storage of each parent's Google tokens. Deferred to Phase 5 as a possible two-way sync.
+- **ICS subscription feed** (one private URL per parent that the calendar app polls). Works in every calendar app, but Google refreshes subscribed feeds only every 12–24 h, the URL is an unauthenticated credential to a family's calendar, and the URL is permanent, which ties every subscription to the API's hostname. It also asks the parent to set up a subscription rather than add the event they just reserved.
+- **"Add to calendar" link or `.ics` download per event.** A one-off copy that never updates. Kept only for a parent's own events.
+
+**Reasons:**
+- **Matches what the parent does.** Reserve, and the event lands in their calendar; nothing to set up.
+- **Fast.** An invite goes out within a minute of reserving; an update within about ten minutes of the provider's last edit (the outbox's quiet period).
+- **No new infrastructure or credentials.** Reuses the outbox, worker and SES sender; no OAuth, no tokens, nothing public to fetch.
+- **Any calendar app.** Gmail, Apple Mail and Outlook all handle iTIP invites.
+
+**Trade-offs accepted:**
+- **Email is the transport.** A parent who turns these emails off gets no invites or updates; a parent's mail provider decides how invites from an outside sender are handled (Gmail may add them automatically or wait for a click). To be verified on real Gmail and iCloud accounts before launch (Phase 4 "done when").
+- **The from-address is fixed.** It is the invite's `ORGANIZER`, and Gmail only applies updates from the organiser, so `events@notify.villageos.co.uk` can't change once invites are out.
+- **One-way.** Edits made in the calendar app don't come back (provider events are read-only anyway). Invites go out as already accepted with `RSVP=FALSE`; nothing reads replies.
+- **Only material changes update the calendar.** Title and description edits don't bump `version`, so the calendar keeps the old title (open item in the plan).
+
+**Implementation notes:**
+- **Reconcile, don't replay.** An outbox row only marks a reservation as possibly out of date. The worker compares `reservations.invite_version` (what the calendar was last sent) with the event now and sends at most one email, so bursts coalesce and reverted edits send nothing.
+- **`UID` per reservation, `SEQUENCE` per reservation.** `invite_sequence` never goes down, so cancel → reserve again → update still applies in the calendar app.
+- The ICS is written by hand (`app/services/ics.py`, escaping and 75-octet folding) rather than adding an `icalendar` dependency to the Lambda bundle. The email is raw MIME (`text/calendar` alternative plus an `invite.ics` attachment), because SES's simple content can't carry a calendar part.
+
+**Impact:** `supabase/migrations/20261116000000_calendar_invites.sql`, `apps/api/app/notifications/`, `apps/api/app/services/{ics,email}.py`, `apps/api/template.yaml` (worker every minute, `ses:SendRawEmail`), Reserve and Settings copy in `apps/web`.
+
+---

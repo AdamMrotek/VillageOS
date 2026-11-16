@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Database-level tests for provider events, reservations and change propagation
-# (docs/PROVIDER_EVENTS_PLAN.md, phases 2 and 3).
+# Database-level tests for provider events, reservations, change propagation
+# and calendar invite queueing (docs/PROVIDER_EVENTS_PLAN.md, phases 2 to 4).
 #
 # These rules live in Postgres functions, triggers and RLS, so they are tested
 # against a real database rather than a stand-in: run against the LOCAL Supabase
@@ -155,31 +155,52 @@ check "spots taken is visible to any parent" "3" \
 check "the outbox is closed to users" "permission denied for table notification_outbox" \
     "$(as_user "$PROVIDER" "SELECT COUNT(*) FROM notification_outbox")"
 
+echo "Calendar invites"
+EVENT_I="$(new_event published NULL '7 days')"
+C="$(parent 3)"
+# Pending outbox rows for C's reservation on EVENT_I, and whether all are due now.
+queued_for_c() { psql_admin -c "SELECT COUNT(*) || ' ' || COALESCE(bool_and(o.due_at <= NOW())::text, '-') FROM notification_outbox o JOIN reservations r ON r.id = o.reservation_id WHERE r.event_id = '$EVENT_I' AND r.user_id = '$C' AND o.status = 'pending'"; }
+# What the worker does after sending: close the row.
+mark_sent() { psql_admin -c "UPDATE notification_outbox SET status = 'sent', sent_at = NOW() WHERE event_id = '$1' AND status = 'pending'" >/dev/null; }
+
+as_user "$C" "SELECT reserve_spot('$EVENT_I', 1)" >/dev/null
+check "reserving queues the calendar invite, due at once" "1 true" "$(queued_for_c)"
+check "nothing is in the parent's calendar until it is sent" "0 -" \
+    "$(as_user "$C" "SELECT invite_sequence || ' ' || COALESCE(invite_version::text, '-') FROM reservations WHERE event_id = '$EVENT_I'")"
+as_user "$C" "SELECT reserve_spot('$EVENT_I', 2)" >/dev/null
+check "changing the spot count does not queue a second row" "1 true" "$(queued_for_c)"
+mark_sent "$EVENT_I"
+as_user "$C" "SELECT cancel_reservation('$EVENT_I')" >/dev/null
+check "cancelling queues the invite's withdrawal, due at once" "1 true" "$(queued_for_c)"
+
 echo "Change propagation"
 version() { psql_admin -c "SELECT version FROM provider_events WHERE id = '$EVENT'"; }
-pending() { psql_admin -c "SELECT COUNT(*) || ' from v' || COALESCE(MIN(from_version)::text, '-') FROM notification_outbox WHERE event_id = '$EVENT' AND status = 'pending'"; }
+# Pending rows for EVENT, and whether all wait out the 10-minute quiet period.
+pending() { psql_admin -c "SELECT COUNT(*) || ' ' || COALESCE(bool_and(due_at > NOW() + INTERVAL '9 minutes')::text, '-') FROM notification_outbox WHERE event_id = '$EVENT' AND status = 'pending'"; }
+# The invites queued by reserving above have been sent.
+mark_sent "$EVENT"
 
 as_user "$PROVIDER" "UPDATE provider_events SET title = 'Renamed' WHERE id = '$EVENT'" >/dev/null
 check "a title edit does not bump the version" "1" "$(version)"
-check "a title edit queues no email" "0 from v-" "$(pending)"
+check "a title edit queues no update" "0 -" "$(pending)"
 
 as_user "$PROVIDER" "UPDATE provider_events SET start_time = start_time + INTERVAL '1 hour', version = 40 WHERE id = '$EVENT'" >/dev/null
 check "a time edit bumps the version (and a client-set version is ignored)" "2" "$(version)"
-check "a time edit queues one email for the one attendee" "1 from v1" "$(pending)"
+check "a time edit queues one update for the one attendee, due after the quiet period" "1 true" "$(pending)"
 check "the previous time is kept" "Pitch 1" \
     "$(as_user "$B" "SELECT location FROM provider_event_versions WHERE event_id = '$EVENT' AND version = 1")"
 check "the parent's reservation is now behind" "1" \
     "$(as_user "$B" "SELECT seen_version FROM reservations WHERE event_id = '$EVENT'")"
 
 as_user "$PROVIDER" "UPDATE provider_events SET location = 'Pitch 2' WHERE id = '$EVENT'" >/dev/null
-check "a second edit coalesces into the same pending email" "1 from v1" "$(pending)"
+check "a second edit coalesces into the same pending update" "1 true" "$(pending)"
 check "opening the event acknowledges the current version" "3" \
     "$(as_user "$B" "SELECT (mark_reservation_seen('$EVENT')).seen_version")"
 
-psql_admin -c "UPDATE notification_outbox SET status = 'sent', sent_at = NOW() WHERE event_id = '$EVENT'" >/dev/null
+mark_sent "$EVENT"
 as_user "$PROVIDER" "SELECT version FROM update_provider_event('$EVENT', '{\"title\":\"Renamed\",\"event_type\":\"sport\",\"start_time\":\"2030-01-01T10:00:00Z\",\"location\":\"Pitch 3\",\"capacity\":1}'::jsonb, FALSE)" >/dev/null
 check "an edit with 'Notify attendees' off still bumps the version" "4" "$(version)"
-check "an edit with 'Notify attendees' off queues no email" "0 from v-" "$(pending)"
+check "an edit with 'Notify attendees' off queues no update" "0 -" "$(pending)"
 check "another provider cannot edit the event" "" \
     "$(as_user "$OTHER_PROVIDER" "SELECT version FROM update_provider_event('$EVENT', '{\"title\":\"Hijacked\",\"event_type\":\"sport\",\"start_time\":\"2031-01-01T10:00:00Z\"}'::jsonb)")"
 
@@ -190,7 +211,7 @@ check "capacity cannot drop below the spots already reserved" "capacity_below_re
 
 as_user "$PROVIDER" "UPDATE provider_events SET status = 'cancelled' WHERE id = '$EVENT'" >/dev/null
 check "cancelling bumps the version" "5" "$(version)"
-check "cancelling queues an email" "1 from v4" "$(pending)"
+check "cancelling queues an update" "1 true" "$(pending)"
 check "a cancelled event cannot be changed" "event_cancelled" \
     "$(as_user "$PROVIDER" "UPDATE provider_events SET status = 'published' WHERE id = '$EVENT'")"
 check "a cancelled event cannot be reserved" "event_not_bookable" "$(as_user "$A" "SELECT reserve_spot('$EVENT', 1)")"

@@ -297,9 +297,10 @@ export default function ProviderEventForm({
               Notify attendees
             </label>
             <p className="text-meta">
-              Parents who reserved are emailed if you change the time or
-              location. Untick for a small correction — they still see
-              &ldquo;Updated&rdquo; in their calendar.
+              Parents who reserved are emailed an update to their calendar
+              invite if you change the time or location. Untick for a small
+              correction — they still see &ldquo;Updated&rdquo; in VillageOS,
+              and their calendar app catches up on your next notified change.
             </p>
           </div>
         )}

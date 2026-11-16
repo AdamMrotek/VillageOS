@@ -35,7 +35,7 @@ ADMIN_DB_ALLOWLIST = {
     "routers/extract.py::extract",  # usage_counters has no user RLS policy by design (ADR-017)
     # The scheduled worker reads the outbox (no user RLS policy by design) and
     # each recipient's address and email preference. No request, no caller JWT.
-    "services/notifications.py::run",
+    "notifications/worker.py::run",
 }
 
 # Only core/db.py may construct a Supabase client; everything else goes

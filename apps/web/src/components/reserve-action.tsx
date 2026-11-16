@@ -110,7 +110,9 @@ export default function ReserveAction({ event }: { event: ListedProviderEvent })
               { eventId: event.id, spots: chosen },
               {
                 onSuccess: () =>
-                  toast.success("Reserved — it's now in your calendar."),
+                  toast.success(
+                    "Reserved. We're emailing you a calendar invite.",
+                  ),
               },
             )
           }
@@ -120,7 +122,8 @@ export default function ReserveAction({ event }: { event: ListedProviderEvent })
       </div>
       <p className="text-xs text-ink-mute">
         The organiser sees how many spots are reserved, not who reserved them.
-        We&apos;ll email you if the time or place changes.
+        We&apos;ll email you a calendar invite, and update it if the time or
+        place changes.
       </p>
     </div>
   );
