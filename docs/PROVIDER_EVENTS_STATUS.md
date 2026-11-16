@@ -1,8 +1,13 @@
 # Provider Events — Phase 2 and 3 status
 
-Snapshot updated 2026-11-15, branch `feat/providares-pages`, last commit
-`47aa73d` (reservations and change propagation), pushed to origin. Read this
-first when picking the work back up.
+Snapshot updated 2026-11-16, branch `feat/providares-pages`, last commit
+`48b1ae2` (outbox retry limit and dead-lettering). Read this first when
+picking the work back up.
+
+**Decision (2026-11-16):** production rollout is deferred until the end of
+development. Development carries on to phase 4 and D1–D3 as long as the
+current work passes locally. The "To ship" and "To turn email on" sections
+below are the end-of-development checklist, not the next step.
 
 Design, phase definitions and open design questions:
 [PROVIDER_EVENTS_PLAN.md](PROVIDER_EVENTS_PLAN.md).
@@ -16,8 +21,8 @@ How the built feature works: [PROVIDERS.md](../PROVIDERS.md#reservations).
 | Role lock-down (`profiles.role`) | Built and committed (`d8f21d2`). Not yet applied to production. |
 | 2 — Reserve and show on the calendar | Built, tested locally, committed and pushed (`47aa73d`). |
 | 3a — In-app change propagation | Built, tested locally, committed and pushed (`47aa73d`). |
-| 3b — Email notifications | Code built, committed and pushed; tested locally with a stand-in sender. **Sending is off** and no real email has been sent. |
-| 4 — ICS feed, D1–D3 Discover home | Not started. |
+| 3b — Email notifications | Code built and committed (retry limit and dead-lettering in `48b1ae2`); tested locally with a stand-in sender. **Sending is off** and no real email has been sent. |
+| 4 — ICS feed, D1–D3 Discover home | **Next.** Not started. |
 
 Nothing from phases 2 or 3 is in production: no migration applied, no deploy.
 
@@ -31,7 +36,7 @@ Lambda), `.github/workflows/ci.yml` (database tests step),
 
 | Check | Command | Result |
 | --- | --- | --- |
-| API lint, format, types, tests | `cd apps/api && ruff check . && ruff format --check . && mypy && pytest` | clean, 136 passed |
+| API lint, format, types, tests | `cd apps/api && ruff check . && ruff format --check . && mypy && pytest` | clean, 139 passed (re-run after the retry-limit change) |
 | Web types, lint, tests | `cd apps/web && pnpm exec tsc --noEmit && pnpm lint && pnpm test` | clean, 47 passed |
 | Database rules | `bash supabase/tests/provider_events.sh` | 39 passed |
 | End to end | `CI=1 pnpm --filter @repo/e2e exec playwright test` | 6 passed |
@@ -45,7 +50,10 @@ a reverted edit sent none, an opted-out parent was skipped.
 Not verified: a real send through SES, a deploy of the new SAM template, and
 the migrations against the production database.
 
-## To ship, in this order
+## To ship, in this order (end of development)
+
+Deferred on purpose: do this once phase 4 and D1–D3 are built and passing
+locally, so production gets one rollout instead of several.
 
 1. **Check CI on the pushed branch.** The E2E job also runs the database tests
    against a fresh stack, which is the first time the migrations and `seed.sql`
@@ -54,7 +62,7 @@ the migrations against the production database.
 2. **Apply the migrations to production before the API deploys.** Four are
    pending there: `20261114000000` (role lock-down), `20261114010000`
    (reservations), `20261114020000` (change propagation), `20261115000000`
-   (outbox retry limit; not yet committed). The new API calls
+   (outbox retry limit). The new API calls
    database functions that don't exist until these run; editing an event is the
    first thing that would break.
 3. **Audit existing admins** after the role migration:
@@ -69,7 +77,10 @@ the migrations against the production database.
    nothing. Reserving, the calendar merge and the "Updated" badge all work
    without it.
 
-## To turn email on (phase 3b, remaining)
+## To turn email on (phase 3b, remaining; end of development)
+
+Also deferred. SES production access can take days, so request it a little
+before the rollout rather than at the very end.
 
 Steps are in [INTEGRATIONS.md](../INTEGRATIONS.md#amazon-ses--event-change-emails):
 
@@ -120,7 +131,10 @@ ICS feed contents).
   and run `python -c "import worker_handler; print(worker_handler.handler({}, None))"`
   from `apps/api`. Rows only become due 10 minutes after the last edit.
 
-## What comes after
+## What comes next
 
 Phase 4 (ICS feed) and D1 (Discover browse page) are both unblocked. D2
-(personal rows) needs reservations, which now exist.
+(personal rows) needs reservations, which now exist. Before starting, confirm
+the local checks above still pass. Still to build before the rollout: the
+CloudWatch alarm on `notification_dead`, and the worker's log events in
+`apps/api/LOGS.md`.
