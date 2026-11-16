@@ -14,6 +14,10 @@ meantime sends nothing.
 Delivery is at-least-once: a crash between sending and marking the row can
 repeat an email on the next run. It never sends for a change that didn't commit,
 and it never silently drops one.
+
+A row that fails is retried on later runs, up to MAX_ATTEMPTS. After that it is
+dead-lettered: moved to status `failed` with the last error, where it stays for
+someone to look at and no longer holds up newer rows.
 """
 
 import logging
@@ -40,12 +44,16 @@ QUIET_PERIOD = timedelta(minutes=10)
 # is picked up by the next run.
 BATCH_SIZE = 100
 
+# Tries before a row is dead-lettered. At one try per run that is about 25
+# minutes, long enough to ride out a short outage at the email provider.
+MAX_ATTEMPTS = 5
+
 # Events are local to the UK, so times in an email are written in UK time
 # regardless of where the Lambda runs.
 _LOCAL_TZ_NAME = "Europe/London"
 
 _OUTBOX_SELECT = (
-    "id, from_version, pending_since, "
+    "id, from_version, pending_since, attempts, "
     "reservations(user_id, status), "
     "provider_events(id, title, start_time, end_time, is_all_day, location, status, version, "
     "provider_profiles(name))"
@@ -231,9 +239,57 @@ def _finish(db: Client, row: _Row, *, sent: bool, now: datetime) -> None:
         )
 
 
+def failure_update(*, attempts: int, error: str, now: datetime) -> _Row:
+    """The outbox columns to write after a failed try. Pure. `attempts` is the
+    count before this try; the row is dead-lettered when the limit is reached."""
+    attempts += 1
+    update: _Row = {"attempts": attempts, "last_error": error[:500]}
+    if attempts >= MAX_ATTEMPTS:
+        update |= {"status": "failed", "failed_at": now.isoformat()}
+    return update
+
+
+def _record_failure(db: Client, row: _Row, exc: Exception, *, now: datetime) -> str:
+    """Count a failed try against the row. Returns the outcome: "failed" (will
+    be retried) or "dead" (limit reached, dead-lettered)."""
+    update = failure_update(attempts=row.get("attempts") or 0, error=str(exc), now=now)
+    dead = update.get("status") == "failed"
+    logger.error(
+        "notification_dead" if dead else "notification_failed",
+        extra={
+            "event": "notification_dead" if dead else "notification_failed",
+            "outbox_id": row["id"],
+            "attempts": update["attempts"],
+            "reason": str(exc),
+        },
+    )
+    try:
+        (
+            db.table("notification_outbox")
+            .update(update)
+            .eq("id", row["id"])
+            .eq("status", "pending")
+            .execute()
+        )
+    except Exception as record_exc:
+        # The database is unreachable too: the try goes uncounted and the row
+        # stays pending, which is the safe side.
+        logger.error(
+            "notification_failure_not_recorded",
+            extra={
+                "event": "notification_failure_not_recorded",
+                "outbox_id": row["id"],
+                "reason": str(record_exc),
+            },
+        )
+        return "failed"
+    return "dead" if dead else "failed"
+
+
 def process_due(db: Client, sender: EmailSender, *, now: datetime, app_url: str) -> dict[str, int]:
     """Handle every pending notification whose event has gone quiet. Returns
-    counts by outcome. A row that fails stays pending and is retried next run."""
+    counts by outcome. A row that fails stays pending and is retried next run,
+    until MAX_ATTEMPTS dead-letters it."""
     cutoff = (now - QUIET_PERIOD).isoformat()
     rows = cast(
         list[_Row],
@@ -268,11 +324,7 @@ def process_due(db: Client, sender: EmailSender, *, now: datetime, app_url: str)
             _finish(db, row, sent=decision.message is not None, now=now)
             outcome = decision.reason
         except Exception as exc:
-            outcome = "failed"
-            logger.error(
-                "notification_failed",
-                extra={"event": "notification_failed", "outbox_id": row["id"], "reason": str(exc)},
-            )
+            outcome = _record_failure(db, row, exc, now=now)
         counts[outcome] = counts.get(outcome, 0) + 1
 
     logger.info("notifications_processed", extra={"event": "notifications_processed", **counts})

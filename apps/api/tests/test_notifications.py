@@ -132,3 +132,24 @@ class TestDecide:
         row = _row()
         row["provider_events"] = None
         assert _decide(row, _state()).reason == "missing"
+
+
+class TestFailureUpdate:
+    def test_a_failed_try_is_counted_and_the_row_stays_pending(self):
+        update = notifications.failure_update(attempts=0, error="timeout", now=NOW)
+        assert update == {"attempts": 1, "last_error": "timeout"}
+
+    def test_the_last_allowed_try_dead_letters_the_row(self):
+        update = notifications.failure_update(
+            attempts=notifications.MAX_ATTEMPTS - 1, error="bad address", now=NOW
+        )
+        assert update == {
+            "attempts": notifications.MAX_ATTEMPTS,
+            "last_error": "bad address",
+            "status": "failed",
+            "failed_at": NOW.isoformat(),
+        }
+
+    def test_a_long_error_is_cut_short(self):
+        update = notifications.failure_update(attempts=0, error="x" * 2000, now=NOW)
+        assert len(update["last_error"]) == 500

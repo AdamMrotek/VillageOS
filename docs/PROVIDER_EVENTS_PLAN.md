@@ -1,9 +1,11 @@
 # Provider Events & Reservations — Plan and Design
 
-Status: **Phases 1, 2 and 3 built** (2026-11-14). Phase 3b's code is complete
-but sending is off until SES is verified. Phase 4 onwards is proposed. Where
-the build differs from this design, the difference is listed under
-[2.1](#21-what-was-built-differently).
+This document is the design and the phase definitions. Current build state, the
+ship checklist and known gaps live in
+[PROVIDER_EVENTS_STATUS.md](PROVIDER_EVENTS_STATUS.md) and are not repeated
+here. Where the build differs from this design, the difference is listed under
+[2.1](#21-what-was-built-differently). Open design questions are in
+[section 3](#3-open-items).
 
 Providers create and publish events; parents discover them, reserve a spot, see
 the event on their calendar, and stay up to date when the provider edits or
@@ -150,7 +152,9 @@ Mechanism — a **transactional outbox**:
    rows whose event has been quiet for 10+ minutes.
 3. It sends **one** email per parent, diffing the version the parent was last
    notified about against the current state, then marks the row sent.
-4. Failed rows stay pending and retry on the next run.
+4. Failed rows stay pending and retry on the next run, up to 5 tries. After
+   that the row is dead-lettered: set to `failed` with the last error, and
+   left in the table for someone to look at.
 
 `notification_outbox`:
 
@@ -160,8 +164,9 @@ Mechanism — a **transactional outbox**:
 | `reservation_id` | FK → `reservations(id)` `ON DELETE CASCADE` |
 | `event_id` | FK → `provider_events(id)` |
 | `from_version` | Version the parent was last emailed about (or reserved at) |
-| `status` | `pending` \| `sent` \| `skipped` |
+| `status` | `pending` \| `sent` \| `skipped` \| `failed` (dead-lettered) |
 | `pending_since`, `sent_at` | Timestamps; `pending_since` resets on each new edit |
+| `attempts`, `last_error`, `failed_at` | Failed tries so far, the latest error, and when the row was dead-lettered |
 
 At most one `pending` row per reservation (partial unique index), which is what
 makes sends idempotent. RLS: no user access; the worker uses the secret-key
@@ -218,7 +223,7 @@ read-only, with "Cancel reservation" and a link to the provider page.
 
 ## 2. Phases
 
-### Phase 1 — Provider events: create and publish (built)
+### Phase 1 — Provider events: create and publish
 
 - Migration: `provider_events` table + RLS.
 - API: `/api/providers/me/events` CRUD, publish / unpublish;
@@ -228,7 +233,7 @@ read-only, with "Cancel reservation" and a link to the provider page.
 - **Done when:** a provider publishes an event and a parent sees it on the
   provider's page.
 
-### Phase 2 — Reserve and show on the calendar (built)
+### Phase 2 — Reserve and show on the calendar
 
 - Migration: `reservations` table + RLS + `reserve_spot` function.
 - API: reserve, cancel reservation; merged `GET /api/events`.
@@ -237,7 +242,7 @@ read-only, with "Cancel reservation" and a link to the provider page.
 - **Done when:** two parents racing for the last spot produce exactly one
   reservation, and the reserved event shows in the week grid.
 
-### Phase 3 — Change propagation (built; email sending switched off)
+### Phase 3 — Change propagation
 
 Split in two so the in-app half ships without waiting on SES approval.
 
@@ -276,9 +281,6 @@ Split in two so the in-app half ships without waiting on SES approval.
 - **Guards added:** an event with reservations can't be unpublished (it would
   vanish from calendars — cancel it instead); capacity can't drop below the
   spots reserved; a cancelled event can't be changed.
-- **Outstanding for 3b:** SES domain verification, production access and
-  `EMAIL_PROVIDER=ses` (steps in INTEGRATIONS.md). Until then the outbox fills
-  and nothing is sent.
 
 ### Phase 4 — External calendar sync (ICS feed)
 
@@ -303,8 +305,13 @@ real two-way Google Calendar API sync.
 - ~~**Role assignment.**~~ Closed by
   `supabase/migrations/20261114000000_lock_down_profile_role.sql`: sign-up can
   only yield `parent` or `provider`, and users can no longer update
-  `profiles.role` on their own row. `admin` is granted out of band. Provider
-  sign-up stays self-serve, so `provider` is not a vetted role.
+  `profiles.role` on their own row. `admin` is granted out of band.
+- **Provider vetting.** Provider sign-up is self-serve, so `provider` is not a
+  vetted role, and the provider tables' RLS checks ownership, not role: any
+  signed-in user can create a provider page and publish events.
+- **Attendee names for providers.** Built as a count only (see 2.1). Showing
+  names needs consent copy on the Reserve button and a DPIA entry (DPIA open
+  item 6).
 - Should emails be limited to events starting soon (for example within 14
   days), with distant changes left to the in-app badge? (Assumed: no limit for
   now.)

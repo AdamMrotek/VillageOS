@@ -1,9 +1,11 @@
 # Provider Events — Phase 2 and 3 status
 
-Snapshot taken 2026-11-14, branch `feat/providares-pages`, last commit
-`d8f21d2` (role migration). Read this first when picking the work back up.
+Snapshot updated 2026-11-15, branch `feat/providares-pages`, last commit
+`47aa73d` (reservations and change propagation), pushed to origin. Read this
+first when picking the work back up.
 
-Design and phase definitions: [PROVIDER_EVENTS_PLAN.md](PROVIDER_EVENTS_PLAN.md).
+Design, phase definitions and open design questions:
+[PROVIDER_EVENTS_PLAN.md](PROVIDER_EVENTS_PLAN.md).
 How the built feature works: [PROVIDERS.md](../PROVIDERS.md#reservations).
 
 ## Where things stand
@@ -12,45 +14,18 @@ How the built feature works: [PROVIDERS.md](../PROVIDERS.md#reservations).
 | --- | --- |
 | 1 — Create and publish | Built and committed. |
 | Role lock-down (`profiles.role`) | Built and committed (`d8f21d2`). Not yet applied to production. |
-| 2 — Reserve and show on the calendar | Built and tested locally. **Not committed.** |
-| 3a — In-app change propagation | Built and tested locally. **Not committed.** |
-| 3b — Email notifications | Code built and tested locally with a stand-in sender. **Not committed. Sending is off** and no real email has been sent. |
+| 2 — Reserve and show on the calendar | Built, tested locally, committed and pushed (`47aa73d`). |
+| 3a — In-app change propagation | Built, tested locally, committed and pushed (`47aa73d`). |
+| 3b — Email notifications | Code built, committed and pushed; tested locally with a stand-in sender. **Sending is off** and no real email has been sent. |
 | 4 — ICS feed, D1–D3 Discover home | Not started. |
 
 Nothing from phases 2 or 3 is in production: no migration applied, no deploy.
 
-## Uncommitted work
-
-About 53 changed files in the working tree, 17 of them new. The new ones:
-
-```
-supabase/migrations/20261114010000_create_reservations.sql
-supabase/migrations/20261114020000_provider_event_change_propagation.sql
-supabase/tests/provider_events.sh
-apps/api/app/routers/reservations.py
-apps/api/app/schemas/reservations.py
-apps/api/app/services/reservations.py
-apps/api/app/services/notifications.py
-apps/api/app/services/email.py
-apps/api/app/services/db_errors.py
-apps/api/worker_handler.py
-apps/api/tests/test_reservations.py
-apps/api/tests/test_notifications.py
-apps/web/src/components/reserve-action.tsx
-apps/web/src/lib/queries/preferences.ts
-apps/web/src/lib/utils/event-changes.ts
-apps/web/src/lib/utils/event-changes.test.ts
-e2e/tests/reservations.spec.ts
-```
-
-Modified files worth knowing about: `apps/api/template.yaml` (worker Lambda),
-`.github/workflows/ci.yml` (database tests step), `.github/workflows/deploy-api.yml`
-(`EmailProvider` parameter), `supabase/seed.sql` and `e2e/.env.e2e` (e2e
-provider user), `packages/ui/src/custom_components/account-settings.tsx`
-(children slot), plus the docs.
-
-**First step when resuming: commit this.** It has not been pushed, so CI has
-not run on it.
+The files these phases added or changed are in `47aa73d`
+(`git show --stat 47aa73d`). Worth knowing: `apps/api/template.yaml` (worker
+Lambda), `.github/workflows/ci.yml` (database tests step),
+`.github/workflows/deploy-api.yml` (`EmailProvider` parameter),
+`supabase/seed.sql` and `e2e/.env.e2e` (e2e provider user).
 
 ## Last verified results (local, 2026-11-14)
 
@@ -72,12 +47,14 @@ the migrations against the production database.
 
 ## To ship, in this order
 
-1. **Commit and push**, and let CI run. The E2E job now also runs the database
-   tests against a fresh stack, which is the first time the migrations and
-   `seed.sql` will be applied from scratch.
-2. **Apply the migrations to production before the API deploys.** Three are
+1. **Check CI on the pushed branch.** The E2E job also runs the database tests
+   against a fresh stack, which is the first time the migrations and `seed.sql`
+   are applied from scratch. (Pushed, but CI result not checked in this
+   snapshot.)
+2. **Apply the migrations to production before the API deploys.** Four are
    pending there: `20261114000000` (role lock-down), `20261114010000`
-   (reservations), `20261114020000` (change propagation). The new API calls
+   (reservations), `20261114020000` (change propagation), `20261115000000`
+   (outbox retry limit; not yet committed). The new API calls
    database functions that don't exist until these run; editing an event is the
    first thing that would break.
 3. **Audit existing admins** after the role migration:
@@ -110,13 +87,9 @@ anything pending for an event that hasn't happened yet is emailed.
 
 ## Decisions still open
 
-- **Provider vetting.** `provider` is self-serve at sign-up, and the provider
-  tables' RLS checks ownership, not role, so any signed-in user can create a
-  provider page and publish events.
-- **Attendee names for providers.** Built as count only. Showing names needs
-  consent copy on the Reserve button and a DPIA entry (DPIA open item 6).
-- From the plan, still on their assumed defaults: no cut-off for reserving or
-  cancelling before the start; emails sent however far away the event is.
+Tracked in one place: [PROVIDER_EVENTS_PLAN.md §3](PROVIDER_EVENTS_PLAN.md#3-open-items)
+(provider vetting, attendee names, reservation cut-off, email distance limit,
+ICS feed contents).
 
 ## Known gaps
 

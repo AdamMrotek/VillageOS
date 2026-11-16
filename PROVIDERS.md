@@ -197,7 +197,11 @@ minutes) handles pending rows whose event has been quiet for 10 minutes. It
 compares the state the parent was last told about with the state now and sends
 **one** email — or none if the edit was reverted, the parent turned event
 emails off (Settings → Notifications), or they cancelled their reservation.
-Delivery is at-least-once. Sending goes through `app/services/email.py`
+Delivery is at-least-once. A row that fails is retried on later runs; after 5
+tries it is dead-lettered (`status = 'failed'`, with `last_error`) and logged
+as `notification_dead`. To see the dead letters:
+`SELECT id, event_id, attempts, last_error, failed_at FROM notification_outbox WHERE status = 'failed';`
+Sending goes through `app/services/email.py`
 (`EMAIL_PROVIDER`: `none` | `log` | `ses`); it is `none` in production until
 SES is verified — see [INTEGRATIONS.md](INTEGRATIONS.md#amazon-ses--event-change-emails).
 
