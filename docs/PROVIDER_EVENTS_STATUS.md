@@ -1,7 +1,7 @@
-# Provider Events — Phase 2 to 4 status
+# Provider Events — Phase 2 to 4 and Discover status
 
-Snapshot updated 2026-11-16, branch `feat/providares-pages`. Last commit
-`0473ec7`; phase 4 (calendar invites) is built on top of it, uncommitted. Read
+Snapshot updated 2026-11-17, branch `feat/providares-pages`. Phase 4 is
+committed (`be47994`); D1 (Discover browse page) is built on top of it. Read
 this first when picking the work back up.
 
 **Decision (2026-11-16):** production rollout is deferred until the end of
@@ -22,10 +22,11 @@ How the built feature works: [PROVIDERS.md](../PROVIDERS.md#reservations).
 | 2 — Reserve and show on the calendar | Built, tested locally, committed and pushed (`47aa73d`). |
 | 3a — In-app change propagation | Built, tested locally, committed and pushed (`47aa73d`). |
 | 3b — Email notifications | Code built and committed (retry limit and dead-lettering in `48b1ae2`); tested locally with a stand-in sender. **Sending is off** and no real email has been sent. |
-| 4 — Calendar invites by email | Built and tested locally (2026-11-16), not yet committed. The "done when" (real Gmail and iCloud calendars add, update and remove the event) needs SES — see "To turn email on". |
-| D1–D3 Discover home | **Next.** Not started. |
+| 4 — Calendar invites by email | Built, tested locally and committed (`be47994`). The "done when" (real Gmail and iCloud calendars add, update and remove the event) needs SES — see "To turn email on". |
+| D1 — Discover browse page | Built and tested locally (2026-11-17). Migration `20261117000000_discover_home.sql` (`kind` on providers, `provider_reservation_counts()`). |
+| D2–D3 Discover personal rows, embeddings | **Next.** Not started. D2 needs a privacy notice line and a DPIA entry first (personalisation is profiling). |
 
-Nothing from phases 2 to 4 is in production: no migration applied, no deploy.
+Nothing from phases 2 to 4 or D1 is in production: no migration applied, no deploy.
 
 The files these phases added or changed are in `47aa73d`
 (`git show --stat 47aa73d`). Worth knowing: `apps/api/template.yaml` (worker
@@ -33,14 +34,14 @@ Lambda), `.github/workflows/ci.yml` (database tests step),
 `.github/workflows/deploy-api.yml` (`EmailProvider` parameter),
 `supabase/seed.sql` and `e2e/.env.e2e` (e2e provider user).
 
-## Last verified results (local, 2026-11-16, with phase 4)
+## Last verified results (local, 2026-11-17, with D1)
 
 | Check | Command | Result |
 | --- | --- | --- |
-| API lint, format, types, tests | `cd apps/api && . .venv/bin/activate && ruff check . && ruff format --check . && mypy && pytest` | clean, 167 passed |
+| API lint, format, types, tests | `cd apps/api && . .venv/bin/activate && ruff check . && ruff format --check . && mypy && pytest` | clean, 193 passed |
 | Web types, lint, tests | `cd apps/web && pnpm exec tsc --noEmit && pnpm lint && pnpm test` | clean, 47 passed |
-| Database rules | `bash supabase/tests/provider_events.sh` | 43 passed |
-| End to end | `CI=1 pnpm --filter @repo/e2e exec playwright test` | 6 passed |
+| Database rules | `bash supabase/tests/provider_events.sh` | 48 passed |
+| End to end | `CI=1 pnpm --filter @repo/e2e exec playwright test` | 7 passed |
 
 Phase 4 was also checked by hand: the worker, run against the local stack with
 `EMAIL_PROVIDER=log`, sent for one reservation, in order: Booked (`REQUEST`,
@@ -61,19 +62,20 @@ the migrations against the production database.
 
 ## To ship, in this order (end of development)
 
-Deferred on purpose: do this once phase 4 and D1–D3 are built and passing
+Deferred on purpose: do this once D1–D3 are built and passing
 locally, so production gets one rollout instead of several.
 
 1. **Check CI on the pushed branch.** The E2E job also runs the database tests
    against a fresh stack, which is the first time the migrations and `seed.sql`
    are applied from scratch. (Pushed, but CI result not checked in this
    snapshot.)
-2. **Apply the migrations to production before the API deploys.** Five are
+2. **Apply the migrations to production before the API deploys.** Six are
    pending there: `20261114000000` (role lock-down), `20261114010000`
    (reservations), `20261114020000` (change propagation), `20261115000000`
-   (outbox retry limit), `20261116000000` (calendar invites). The new API calls
-   database functions that don't exist until these run; editing an event is the
-   first thing that would break.
+   (outbox retry limit), `20261116000000` (calendar invites),
+   `20261117000000` (Discover). The new API calls database functions and
+   columns that don't exist until these run; editing an event and opening
+   Discover are the first things that would break.
 3. **Audit existing admins** after the role migration:
    `SELECT id, role, created_at FROM profiles WHERE role = 'admin';` and demote
    any that aren't recognised. The migration can't tell a self-assigned admin
@@ -145,10 +147,16 @@ title edits and calendar invites).
 ## Local environment notes
 
 - The local Supabase database has all the provider migrations applied (the
-  calendar invites one was applied by hand with `psql`), plus the
-  `e2e-provider@test.local` user and its "E2E Sports Club" page. A
-  `supabase db reset` recreates both from `seed.sql`; the dev provider from
-  `supabase/seed_dev_provider_events.sql` must be re-applied by hand.
+  calendar invites and Discover ones were applied by hand with `psql`), plus
+  the e2e users from `seed.sql`: `e2e-provider@test.local` ("E2E Sports
+  Club"), and a venue and an entertainer for the Discover spec. A
+  `supabase db reset` recreates them; the dev data from
+  `supabase/seed_dev_provider_events.sql` (a school) and
+  `supabase/seed_dev_discover.sql` (venues, entertainers, a football club and
+  their events) must be re-applied by hand.
+- The e2e suite with `CI=1` does a production build, which downloads Google
+  Fonts: it needs network access. Without `CI=1` it starts `next dev`, which
+  refuses to run while another dev server (:3000) is up in `apps/web`.
 - The web dev server on :3000 reads `apps/web/.env.local`, which points at the
   hosted Supabase project. That project lacks the migrations, so the new
   screens fail there until step 2 above. Use the e2e setup (web :3100, API
@@ -161,7 +169,9 @@ title edits and calendar invites).
 
 ## What comes next
 
-D1 (Discover browse page) is next; D2 (personal rows) needs reservations,
-which now exist. Before starting, confirm the local checks above still pass.
+D2 (personal rows: "Because you reserved X", "Fits your calendar") is next.
+Before building it, add a line to the privacy notice and a DPIA entry:
+personalisation counts as profiling. D3 (pgvector recommendations with an
+offline eval set) follows.
 Still to build before the rollout: the CloudWatch alarm on
 `notification_dead`, and the worker's log events in `apps/api/LOGS.md`.

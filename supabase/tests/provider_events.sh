@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Database-level tests for provider events, reservations, change propagation
-# and calendar invite queueing (docs/PROVIDER_EVENTS_PLAN.md, phases 2 to 4).
+# Database-level tests for provider events, reservations, change propagation,
+# calendar invite queueing (docs/PROVIDER_EVENTS_PLAN.md, phases 2 to 4) and
+# the Discover page's provider kind and popularity counts (D1).
 #
 # These rules live in Postgres functions, triggers and RLS, so they are tested
 # against a real database rather than a stand-in: run against the LOCAL Supabase
@@ -215,6 +216,34 @@ check "cancelling queues an update" "1 true" "$(pending)"
 check "a cancelled event cannot be changed" "event_cancelled" \
     "$(as_user "$PROVIDER" "UPDATE provider_events SET status = 'published' WHERE id = '$EVENT'")"
 check "a cancelled event cannot be reserved" "event_not_bookable" "$(as_user "$A" "SELECT reserve_spot('$EVENT', 1)")"
+
+echo "Discover"
+check "a provider is an organiser unless they say otherwise" "organiser" \
+    "$(psql_admin -c "SELECT kind FROM provider_profiles WHERE user_id = '$OTHER_PROVIDER'")"
+check "a provider can say they are a venue" "venue" \
+    "$(as_user "$OTHER_PROVIDER" "UPDATE provider_profiles SET kind = 'venue' WHERE user_id = '$OTHER_PROVIDER' RETURNING kind")"
+check "kind is one of venue, organiser, entertainer" 'invalid input value for enum provider_kind: "circus"' \
+    "$(as_user "$OTHER_PROVIDER" "UPDATE provider_profiles SET kind = 'circus' WHERE user_id = '$OTHER_PROVIDER'")"
+other_event() {
+    psql_admin -c "INSERT INTO provider_events (provider_id, title, event_type, start_time, status) VALUES ('$OTHER_PROVIDER', 'Swim', 'sport', NOW() + INTERVAL '3 days', 'published') RETURNING id"
+}
+SWIM="$(other_event)"
+SWIM_CANCELLED="$(other_event)"
+as_user "$(parent 4)" "SELECT reserve_spot('$SWIM', 2)" >/dev/null
+as_user "$(parent 5)" "SELECT reserve_spot('$SWIM', 1)" >/dev/null
+as_user "$(parent 5)" "SELECT cancel_reservation('$SWIM')" >/dev/null
+as_user "$(parent 6)" "SELECT reserve_spot('$SWIM_CANCELLED', 1)" >/dev/null
+psql_admin -c "UPDATE provider_events SET status = 'cancelled' WHERE id = '$SWIM_CANCELLED'" >/dev/null
+check "popularity counts confirmed reservations on published events" "1" \
+    "$(as_user "$A" "SELECT reservations FROM provider_reservation_counts(ARRAY['$OTHER_PROVIDER']::uuid[])")"
+check "popularity is not open to signed-out visitors" "permission denied for function provider_reservation_counts" \
+    "$(psql_admin 2>&1 <<SQL | grep -v '^$' | sed -n '1p' | sed 's/^ERROR:  //'
+BEGIN;
+SET LOCAL ROLE anon;
+SELECT * FROM provider_reservation_counts(ARRAY['$OTHER_PROVIDER']::uuid[]);
+COMMIT;
+SQL
+)"
 
 echo "Profiles"
 check "a parent can turn event emails off" "f" \

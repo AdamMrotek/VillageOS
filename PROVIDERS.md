@@ -7,7 +7,7 @@ Four surfaces make up the feature:
 | Surface | Route | Who | What |
 | --- | --- | --- | --- |
 | **My provider page** | `/provider` | the provider (owner) | create / edit their own public profile + cover image |
-| **Discover** | `/discover` | anyone signed in | search the directory of providers |
+| **Discover** | `/discover` | anyone signed in | browse rows of events, venues and entertainers; search the directory |
 | **Provider detail** | `/discover/[providerId]` | anyone signed in | read a single provider's public page and its upcoming events |
 | **My events** | `/provider/events` | the provider (owner) | create, edit, publish, unpublish and cancel events |
 
@@ -20,6 +20,7 @@ Four surfaces make up the feature:
 | `user_id` | PK, FK → `auth.users(id)` `ON DELETE CASCADE`. One profile per user. |
 | `name` | Organisation name (≤120 chars, validated in the API). |
 | `category` | `provider_category` enum: `school`, `sports_club`, `community`, `council`, `library`, `other`. |
+| `kind` | `provider_kind` enum: `venue`, `organiser` (default), `entertainer`. How parents use the provider, separate from its sector (`category`). Added in `20261117000000_discover_home.sql`. |
 | `description` | ≤600 chars. |
 | `location`, `website` | Free text. |
 | `image_url` | Full CloudFront URL of the cover image (nullable). |
@@ -39,7 +40,7 @@ The directory is **public-read, owner-write**:
 
 `/provider` (`apps/web/src/app/(app)/provider/page.tsx`) loads the signed-in user's own profile via `useMyProvider()` (`GET /api/providers/me`, returns `null` until one exists), then renders `ProviderForm` seeded from it. The form is a single upsert — there's no separate "create" vs "edit":
 
-1. The provider fills in name, category, description, location, website, tags, and drops a cover image.
+1. The provider fills in name, category, kind (organiser / venue / entertainer), description, location, website, tags, and drops a cover image.
 2. Submit → `useUpdateMyProvider()` → `PUT /api/providers/me` with the full `ProviderProfileInput`.
 3. The API's `upsert_my_provider` stamps `user_id` (from the JWT) + `updated_at` and upserts the row.
 4. On success the mutation writes the result into the `my-provider` cache and invalidates the `providers` (directory) cache so search results reflect the change.
@@ -60,9 +61,33 @@ Why it's built this way:
 - **Private bucket + CloudFront OAC** — the S3 bucket is fully private; only CloudFront (via Origin Access Control) can read it. The Lambda's IAM only grants `s3:PutObject`.
 - Accepted types: PNG, JPEG, WebP. Cap: 5 MB (enforced client-side as a pre-check **and** by the S3 policy).
 
-## Search (Discover)
+## Discover
 
-`/discover` (`apps/web/src/app/(app)/discover/page.tsx`) is a debounced (250 ms) search box over the directory:
+`/discover` (`apps/web/src/app/(app)/discover/page.tsx`) is a browse page with a search box. Design: [PROVIDER_EVENTS_PLAN.md §4](docs/PROVIDER_EVENTS_PLAN.md#4-discover-home--browse-and-recommendations).
+
+### Browse
+
+Top to bottom: the search box, kind chips (All / Events / Venues / Entertainers), one featured card, then rows of cards that scroll sideways. The page renders whatever `GET /api/discover/home?kind=` returns, in order, so rows are changed in the API only (`app/services/discover.py`).
+
+Rows (R1, rule-based):
+
+| Row | Items | Rule |
+| --- | --- | --- |
+| This week | events | Starting in the next 7 days. |
+| New on VillageOS | providers | Joined in the last 30 days, newest first. |
+| Popular venues | providers | `kind = venue`, ranked by confirmed reservations on their published events (`provider_reservation_counts()`, a `SECURITY DEFINER` function returning totals only). Titled "Venues" until anyone has reserved. |
+| Entertainers | providers | `kind = entertainer`, by name. |
+| Sports clubs, Schools, Libraries, Community, Council | events | One row per provider category (`other` has none). |
+
+- Only published events that haven't started (all-day events stay through their day) and aren't full. Each row holds at most 12 cards; empty rows are dropped.
+- Fewer than 3 rows left: "All events" and "All providers" are added, unless they would repeat a row.
+- Featured: the most reserved event in the next 14 days (soonest on a tie), else the next event; with no events, or the Venues / Entertainers chip, the top provider of that kind.
+- Kind chips: Events keeps the event rows; Venues and Entertainers keep the provider rows, filtered to that kind.
+- Event cards show the date, title, provider and spots left (and "Reserved" when the parent holds spots). They link to `/discover/{provider_id}#event-{id}`; the provider page scrolls to that event once its events load.
+
+### Search
+
+Typing in the search box switches from the rows to a debounced (250 ms) search over the directory:
 
 - `useProviders(q)` → `GET /api/providers?q=<query>` (empty query returns the full list, ordered by name).
 - Server side, `search_providers` does a case-insensitive substring match on `name` (`ILIKE '%q%'`), backed by the trigram index.
@@ -337,6 +362,12 @@ Events, in `apps/api/app/routers/provider_events.py` (same prefix):
 
 Both listings include `spots_taken` and the caller's own `my_spots`.
 
+Discover, in `apps/api/app/routers/discover.py`:
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/discover/home` | required | The browse page for one kind chip (`?kind=`: `all`, `event`, `venue`, `entertainer`). Returns `{ featured, rows }`; each row is `{ id, title, item_type, items }` with `item_type` `event` or `provider`. |
+
 Reservations, in `apps/api/app/routers/reservations.py`, prefix `/api/provider-events`:
 
 | Method | Path | Auth | Purpose |
@@ -360,6 +391,10 @@ apps/api/app/schemas/providers.py        # Pydantic models + validation
 apps/api/app/routers/provider_events.py  # event endpoints
 apps/api/app/services/provider_events.py # event CRUD + status transitions
 apps/api/app/schemas/provider_events.py  # ProviderEventInput (extends EventCore)
+apps/api/app/routers/discover.py         # browse endpoint
+apps/api/app/services/discover.py        # R1 row rules (build_home is pure)
+apps/api/app/schemas/discover.py         # DiscoverHome, rows, featured
+apps/api/tests/test_discover.py          # row rules
 apps/api/tests/test_provider_events.py   # schema + service rules
 apps/api/app/services/reservations.py    # reserve / cancel / calendar merge
 apps/api/app/notifications/              # outbox worker + handlers (see Notifications)
@@ -369,13 +404,18 @@ apps/api/app/services/db_errors.py       # database rule violations → HTTP err
 apps/api/worker_handler.py               # Lambda entry point for the worker
 supabase/tests/provider_events.sh        # DB tests: race, RLS, trigger, outbox queueing
 e2e/tests/reservations.spec.ts           # reserve → updated → cancelled, in a browser
+e2e/tests/discover.spec.ts               # rows, kind chips, event card → reserve, search
+supabase/seed_dev_discover.sql           # local venues, entertainers and events
 apps/api/template.yaml                   # ProviderCover* S3 bucket, OAC, CloudFront
 supabase/migrations/2026060800000*.sql   # table, RLS, image column
 
 apps/web/src/app/(app)/provider/page.tsx            # owner edit form
-apps/web/src/app/(app)/discover/page.tsx            # search
+apps/web/src/app/(app)/discover/page.tsx            # browse rows + search
 apps/web/src/app/(app)/discover/[providerId]/page.tsx  # detail
 apps/web/src/app/(app)/provider/events/             # owner list, new, edit
+apps/web/src/components/discover-cards.tsx         # event / provider tiles, featured card
+apps/web/src/components/discover-row.tsx           # sideways-scrolling row
+apps/web/src/lib/queries/discover.ts              # useDiscoverHome
 apps/web/src/components/provider-card.tsx           # card + CategoryBadge
 apps/web/src/components/provider-event-card.tsx     # event card + status badge
 apps/web/src/components/provider-event-form.tsx     # create / edit form

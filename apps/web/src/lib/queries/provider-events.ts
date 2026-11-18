@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { apiClient } from "@/lib/api-client";
 import { ApiError } from "@/lib/api-fetch";
+import { DISCOVER_KEY } from "@/lib/queries/discover";
 import { EVENTS_KEY } from "@/lib/queries/events";
 import type {
   ListedProviderEvent,
@@ -54,6 +55,8 @@ function useInvalidateEvents() {
     qc.invalidateQueries({ queryKey: PROVIDER_EVENTS_KEY });
     // A reserved event shows on the parent's calendar straight from this row.
     qc.invalidateQueries({ queryKey: EVENTS_KEY });
+    // Discover cards show spots left and the viewer's own reservation.
+    qc.invalidateQueries({ queryKey: DISCOVER_KEY });
   };
 }
 

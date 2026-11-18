@@ -37,7 +37,7 @@ export function spotsLeft(event: ListedProviderEvent): number | null {
 }
 
 /** What a parent reads: how many spots they could still take. */
-function spotsLeftLabel(event: ListedProviderEvent): string {
+export function spotsLeftLabel(event: ListedProviderEvent): string {
   const left = spotsLeft(event);
   if (left === null) return "Unlimited spots";
   if (left === 0) return "Full";
@@ -66,7 +66,9 @@ export default function ProviderEventCard({
   const cancelled = event.status === "cancelled";
   return (
     <article
-      className={`rounded-lg border border-input bg-surface p-4 ${eventTypeStyle(event.event_type).border}`}
+      // The anchor Discover cards link to (`/discover/{provider}#event-{id}`).
+      id={`event-${event.id}`}
+      className={`scroll-mt-6 rounded-lg border border-input bg-surface p-4 ${eventTypeStyle(event.event_type).border}`}
     >
       <div className="flex items-start justify-between gap-2">
         <h3

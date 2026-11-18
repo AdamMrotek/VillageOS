@@ -10,6 +10,7 @@ from app.routers import (
     account,
     admin,
     demo,
+    discover,
     events,
     extract,
     health,
@@ -40,6 +41,7 @@ app.include_router(events.router)
 app.include_router(events.action_items_router)
 app.include_router(extract.router)
 app.include_router(demo.router)
+app.include_router(discover.router)
 app.include_router(providers.router)
 app.include_router(provider_events.router)
 app.include_router(reservations.router)

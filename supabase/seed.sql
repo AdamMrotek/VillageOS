@@ -5,6 +5,8 @@
 --   e2e-b@test.local / e2e-password-b  — counterpart for the RLS boundary spec
 --   e2e-provider@test.local / e2e-password-provider — a provider with a public
 --       page ("E2E Sports Club"); reservations.spec.ts publishes events as it
+--   e2e-venue@test.local, e2e-entertainer@test.local — provider pages only
+--       (no sign-in), so discover.spec.ts has a venue and an entertainer
 --
 -- Users are inserted pre-confirmed so no email round-trip is needed to sign
 -- in, and pre-consented (user_metadata.privacy_consent, matching what
@@ -86,3 +88,56 @@ VALUES (
     'Seeded provider for the reservations spec.',
     'Testville'
 );
+
+-- A venue and an entertainer for discover.spec.ts, so the Discover page has
+-- events, venues and entertainers to show. They never sign in: no password,
+-- no identity.
+INSERT INTO auth.users (
+    instance_id, id, aud, role, email,
+    email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+    created_at, updated_at,
+    confirmation_token, recovery_token,
+    email_change, email_change_token_new, email_change_token_current
+)
+VALUES
+    (
+        '00000000-0000-0000-0000-000000000000',
+        '66666666-6666-6666-6666-666666666666',
+        'authenticated', 'authenticated',
+        'e2e-venue@test.local',
+        now(),
+        '{"provider": "email", "providers": ["email"]}',
+        '{"role": "provider"}',
+        now(), now(),
+        '', '', '', '', ''
+    ),
+    (
+        '00000000-0000-0000-0000-000000000000',
+        '77777777-7777-7777-7777-777777777777',
+        'authenticated', 'authenticated',
+        'e2e-entertainer@test.local',
+        now(),
+        '{"provider": "email", "providers": ["email"]}',
+        '{"role": "provider"}',
+        now(), now(),
+        '', '', '', '', ''
+    );
+
+INSERT INTO provider_profiles (user_id, name, category, kind, description, location)
+VALUES
+    (
+        '66666666-6666-6666-6666-666666666666',
+        'E2E Leisure Centre',
+        'council',
+        'venue',
+        'Seeded venue for the discover spec.',
+        'Testville'
+    ),
+    (
+        '77777777-7777-7777-7777-777777777777',
+        'E2E Magician',
+        'other',
+        'entertainer',
+        'Seeded entertainer for the discover spec.',
+        'Testville'
+    );

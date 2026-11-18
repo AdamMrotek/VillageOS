@@ -365,8 +365,9 @@ real two-way Google Calendar API sync.
 
 ## 4. Discover home — browse and recommendations
 
-Status: **proposed** (2026-11-13). A separate track from sections 1–3; it
-depends on Phase 1 for event content.
+Status: D1 **built** (2026-11-17); D2 and D3 not started. A separate track from
+sections 1–3; it depends on Phase 1 for event content. How the built page
+works: [PROVIDERS.md](../PROVIDERS.md#discover).
 
 A streaming-app style browse page for parents: horizontal rows of cards they
 can scroll through, instead of today's single search grid.
@@ -377,7 +378,7 @@ can scroll through, instead of today's single search grid.
 | --- | --- | --- | --- |
 | **Venue** | A place families go: soft play, pool, library, club ground | Provider page with its upcoming events | `provider_profiles`, `kind = 'venue'` |
 | **Entertainer** | A person or act that is booked: magician, face painter, party host | Provider page with an enquiry contact | `provider_profiles`, `kind = 'entertainer'` |
-| **Event** | A dated thing with spots | Event detail with Reserve | `provider_events` |
+| **Event** | A dated thing with spots | The provider's page, scrolled to the event, with Reserve | `provider_events` |
 
 Model change: add `kind` (`venue` \| `organiser` \| `entertainer`, default
 `organiser`) to `provider_profiles`. It is separate from the existing
@@ -404,16 +405,20 @@ cards show date, spots left and the provider name.
 
 ### 4.3 Rows are server-driven
 
-`GET /api/discover/home` returns an ordered list of rows:
+`GET /api/discover/home?kind=` returns the featured item and an ordered list
+of rows for the selected kind chip:
 
 ```json
-[
-  { "id": "events-this-week", "title": "This week", "item_type": "event", "items": [] },
-  { "id": "popular-venues", "title": "Popular venues", "item_type": "provider", "items": [] }
-]
+{
+  "featured": { "item_type": "event", "item": {} },
+  "rows": [
+    { "id": "events-this-week", "title": "This week", "item_type": "event", "items": [] },
+    { "id": "popular-venues", "title": "Popular venues", "item_type": "provider", "items": [] }
+  ]
+}
 ```
 
-The frontend renders whatever rows it is given. New rows, reordering and
+The frontend renders whatever it is given. New rows, reordering and
 personalisation are then API-only changes, and empty rows are dropped
 server-side.
 
@@ -449,7 +454,7 @@ parent has already reserved.
 
 ### 4.6 Phases
 
-**D1 — Browse page with rule-based rows** (after Phase 1)
+**D1 — Browse page with rule-based rows** (after Phase 1) — **built**
 
 - Migration: `kind` on `provider_profiles`; kind selector on the provider form.
 - API: `GET /api/discover/home` with R1 rows.
