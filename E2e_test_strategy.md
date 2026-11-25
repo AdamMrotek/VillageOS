@@ -87,7 +87,8 @@ if none match. Text only. Pinned by `apps/api/tests/test_extraction_fake.py`.
 ## CI
 
 The `e2e` job in `ci.yml` runs in parallel with `web` and `api` (~5–8 min,
-20 min timeout, no secrets): pinned Supabase CLI 2.98.2 → fresh seeded stack →
+20 min timeout, no secrets): pinned Supabase CLI 2.98.2 and production's Postgres
+version (CLI 2.98.2's default image crashes; see `ci.yml`) → fresh seeded stack →
 `supabase/tests/provider_events.sh` → Playwright → HTML report on failure.
 
 ## To do
