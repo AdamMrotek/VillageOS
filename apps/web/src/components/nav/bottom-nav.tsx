@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useNavItems } from "./nav-items";
+import { activeHref, useNavItems } from "./nav-items";
 
 export default function BottomNav() {
   const pathname = usePathname();
   const items = useNavItems();
+  const current = activeHref(items, pathname);
 
   return (
     <nav
@@ -15,8 +16,7 @@ export default function BottomNav() {
     >
       <ul className="mx-auto flex max-w-6xl items-stretch">
         {items.map((item) => {
-          const active =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const active = item.href === current;
           return (
             <li key={item.href} className="flex-1">
               <Link

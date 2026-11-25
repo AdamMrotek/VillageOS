@@ -4,14 +4,23 @@ import { useState } from "react";
 import { toast } from "sonner";
 import CoverDropzone from "@/components/cover-dropzone";
 import PageLayout from "@/components/page-layout";
-import { CATEGORY_LABELS } from "@/components/provider-card";
+import { CATEGORY_LABELS, KIND_LABELS } from "@/components/provider-card";
 import { useMyProvider, useUpdateMyProvider } from "@/lib/queries/providers";
 import type {
   ProviderCategory,
+  ProviderKind,
   StoredProviderProfile,
 } from "@/lib/types/providers";
 
 const CATEGORIES = Object.keys(CATEGORY_LABELS) as ProviderCategory[];
+
+// How parents will use the page; shown under each option.
+const KIND_HINTS: Record<ProviderKind, string> = {
+  organiser: "You run events: classes, clubs, fairs. Schools and councils too.",
+  venue: "A place families go: soft play, a pool, a library.",
+  entertainer: "Booked for parties: a magician, a face painter, a party host.",
+};
+const KINDS = Object.keys(KIND_HINTS) as ProviderKind[];
 
 const inputClass =
   "flex h-9 w-full rounded-md border border-input bg-surface px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -38,6 +47,9 @@ function ProviderForm({ initial }: { initial: StoredProviderProfile | null }) {
   const [category, setCategory] = useState<ProviderCategory>(
     initial?.category ?? "school",
   );
+  const [kind, setKind] = useState<ProviderKind>(
+    initial?.kind ?? "organiser",
+  );
   const [description, setDescription] = useState(initial?.description ?? "");
   const [location, setLocation] = useState(initial?.location ?? "");
   const [website, setWebsite] = useState(initial?.website ?? "");
@@ -50,6 +62,7 @@ function ProviderForm({ initial }: { initial: StoredProviderProfile | null }) {
       {
         name: name.trim(),
         category,
+        kind,
         description: description.trim() || null,
         location: location.trim() || null,
         website: website.trim() || null,
@@ -98,6 +111,40 @@ function ProviderForm({ initial }: { initial: StoredProviderProfile | null }) {
           ))}
         </select>
       </div>
+
+      <fieldset className="space-y-2">
+        <legend className="text-sm font-medium">What kind of provider are you?</legend>
+        <p className="text-xs text-ink-soft">
+          Decides where parents find you on Discover.
+        </p>
+        {KINDS.map((k) => (
+          <label
+            key={k}
+            className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition-colors ${
+              kind === k
+                ? "border-primary bg-surface-alt"
+                : "border-input bg-surface hover:bg-surface-alt"
+            }`}
+          >
+            <input
+              type="radio"
+              name="kind"
+              value={k}
+              checked={kind === k}
+              onChange={() => setKind(k)}
+              className="mt-1"
+            />
+            <span>
+              <span className="block text-sm font-medium text-ink">
+                {KIND_LABELS[k]}
+              </span>
+              <span className="block text-xs text-ink-soft">
+                {KIND_HINTS[k]}
+              </span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
 
       <div className="space-y-1">
         <label htmlFor="description" className="text-sm font-medium">

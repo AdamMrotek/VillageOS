@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useNavItems } from "./nav-items";
+import { activeHref, useNavItems } from "./nav-items";
 
 export default function NavLinks() {
   const pathname = usePathname();
   const items = useNavItems();
+  const current = activeHref(items, pathname);
 
   return (
     <nav className="hidden items-center gap-6 md:flex">
       {items.map((item) => {
-        const active =
-          pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const active = item.href === current;
         return (
           <Link
             key={item.href}

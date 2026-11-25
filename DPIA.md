@@ -54,6 +54,16 @@ security** (ADR-010).
   contained *within* freeform event text. Not separately structured, categorised,
   or profiled.
 - Provider users additionally store profile/cover images (AWS S3).
+- Reservations: which provider events a parent has reserved and how many
+  spots. The provider sees the **count** of spots taken, not who reserved.
+- Calendar invite emails for reserved events: the parent's email address and
+  the event's title, time, place, description and organiser are sent through
+  **Amazon SES** (a new sub-processor, `eu-north-1`) once sending is switched
+  on, as a calendar invite on reserving and an update when the event changes
+  or either side cancels. The parent's own mail and calendar provider (e.g.
+  Google, Apple) then holds a copy under the parent's account; it is chosen by
+  the parent and is not our sub-processor. Parents can turn these emails off in
+  Settings.
 - Analytics: first-party product analytics stored in our own Supabase database
   (no third-party analytics processor, ADR-023), keyed to the stable Supabase
   user id — no device cookie/localStorage.
@@ -135,3 +145,9 @@ display the user's calendar. No advertising, no profiling, no secondary use.
 2. Enable **2FA** on the owner's admin/provider accounts.
 3. **Sign off** section 7 (owner).
 4. Pay the **ICO data protection fee** (~£40/yr) — see checklist Tier 1.
+5. Before switching calendar invite emails on: add **Amazon SES** to the
+   privacy notice's sub-processor list, and say that reserved events are
+   emailed as calendar invites (so the parent's calendar provider keeps a
+   copy) and how to turn them off.
+6. Before showing providers **who** reserved (names): add consent copy on the
+   Reserve button and assess it here.

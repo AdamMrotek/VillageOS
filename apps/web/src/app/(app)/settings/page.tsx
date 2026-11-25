@@ -3,8 +3,13 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AccountSettings from "@repo/ui/custom_components/account-settings";
+import { Checkbox } from "@repo/ui/components/checkbox";
 import { deleteAccount } from "@/lib/api-client";
 import { useIsDemo } from "@/lib/hooks/use-is-demo";
+import {
+  usePreferences,
+  useUpdatePreferences,
+} from "@/lib/queries/preferences";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -21,6 +26,40 @@ export default function SettingsPage() {
     <AccountSettings
       deleteAccount={deleteAccount}
       changePasswordHref="/settings/password"
-    />
+    >
+      <NotificationSettings />
+    </AccountSettings>
+  );
+}
+
+/** Where the "Turn these emails off" link in a reserved-event email lands. */
+function NotificationSettings() {
+  const { data: preferences } = usePreferences();
+  const update = useUpdatePreferences();
+
+  return (
+    <section className="mt-8 space-y-4">
+      <h2 className="text-sm font-medium text-ink">Notifications</h2>
+      <label className="flex items-start gap-3 rounded-md border border-hairline bg-surface p-5">
+        <Checkbox
+          checked={preferences?.event_emails ?? false}
+          disabled={!preferences}
+          onCheckedChange={(checked) =>
+            update.mutate({ event_emails: checked === true })
+          }
+          className="mt-0.5 bg-surface"
+        />
+        <span>
+          <span className="block text-body text-ink">
+            Calendar invites for reserved events
+          </span>
+          <span className="block text-sm text-ink-soft">
+            Email me a calendar invite when I reserve an event, and an update
+            when it is cancelled or its time or place changes. Turned off, your
+            calendar app stops updating; changes always show in VillageOS.
+          </span>
+        </span>
+      </label>
+    </section>
   );
 }

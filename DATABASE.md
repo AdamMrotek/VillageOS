@@ -73,6 +73,34 @@ Stores calendar events belonging to a user. Created by `supabase/migrations/2026
 
 **Row-level security:** enabled and **load-bearing**. The `users_own_events` policy restricts all operations to rows where `auth.uid() = user_id`. User routes go through `get_user_db` in `apps/api/app/core/db.py`, which builds a per-request Supabase client scoped to the caller's JWT — so every query runs as that user and RLS does the filtering. Service-layer code does not add `.eq("user_id", ...)` filters; forgetting one is no longer a leak. `INSERT`s must still include `user_id` for the policy's `WITH CHECK` clause to pass. The secret-key client (`get_admin_db`) bypasses RLS and is reserved for admin paths.
 
+### `provider_events`
+
+Events a provider publishes on their public page. Created by
+`supabase/migrations/20261113000000_create_provider_events.sql`. Public-read
+once published, owner-write, draft-only delete. Columns, RLS and status rules
+are documented in [PROVIDERS.md](PROVIDERS.md#provider-events).
+
+### `reservations`, `provider_event_versions`, `notification_outbox`
+
+Reserving a provider's event, telling parents when it changes, and keeping
+the calendar invite in their own calendar app current
+(`20261114010000_create_reservations.sql`,
+`20261114020000_provider_event_change_propagation.sql`,
+`20261115000000_notification_outbox_retry_limit.sql`,
+`20261116000000_calendar_invites.sql`). The rules — capacity, versioning,
+queueing invites and their updates in the outbox — live in Postgres functions
+and a trigger, not in the API. `reservations.invite_sequence` and
+`invite_version` record what each parent's calendar was last sent. See
+[PROVIDERS.md](PROVIDERS.md#reservations) and
+[PROVIDERS.md](PROVIDERS.md#calendar-invites).
+
+### `profiles`
+
+`role` is set by the sign-up trigger (`parent` or `provider` only) and is not
+writable by the user; `admin` is granted in SQL
+(`20261114000000_lock_down_profile_role.sql`). Users can update only
+`full_name` and `event_emails` on their own row.
+
 ---
 
 ## Pydantic ↔ DB mapping

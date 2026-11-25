@@ -119,11 +119,27 @@ jobs:
         with:
           version: 2.98.2
 
+      # Run production's Postgres (`supabase services` shows it under LINKED).
+      # The CLI reads this file, which `supabase link` writes locally; without
+      # it, CLI 2.98.2 starts 17.6.1.106, where calling a function the role
+      # can't execute segfaults the server (supabase/postgres#2112, images
+      # .099 to .112).
+      - name: Pin Postgres to the production version
+        run: |
+          mkdir -p supabase/.temp
+          printf '%s' '17.6.1.155' > supabase/.temp/postgres-version
+
       # Fresh stack: applies supabase/migrations + seed.sql, serves JWKS from
       # the committed local-only signing key. All keys are the CLI's shared
       # local defaults — no GitHub secrets involved.
       - name: Start local Supabase stack
         run: supabase start -x studio,imgproxy,edge-runtime,vector,logflare
+
+      # The reservation and change-tracking rules live in Postgres (functions,
+      # a trigger, RLS), so they are tested against the real database — this
+      # job is the one that has it running.
+      - name: Database tests
+        run: bash supabase/tests/provider_events.sh
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4

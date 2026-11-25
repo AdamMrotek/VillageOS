@@ -3,6 +3,10 @@
 --
 --   e2e-a@test.local / e2e-password-a  — primary user (Playwright storageState)
 --   e2e-b@test.local / e2e-password-b  — counterpart for the RLS boundary spec
+--   e2e-provider@test.local / e2e-password-provider — a provider with a public
+--       page ("E2E Sports Club"); reservations.spec.ts publishes events as it
+--   e2e-venue@test.local, e2e-entertainer@test.local — provider pages only
+--       (no sign-in), so discover.spec.ts has a venue and an entertainer
 --
 -- Users are inserted pre-confirmed so no email round-trip is needed to sign
 -- in, and pre-consented (user_metadata.privacy_consent, matching what
@@ -41,6 +45,18 @@ VALUES
         '{"privacy_consent": {"version": "2026-06-16.2", "accepted_at": "2026-07-01T00:00:00Z"}}',
         now(), now(),
         '', '', '', '', ''
+    ),
+    (
+        '00000000-0000-0000-0000-000000000000',
+        '55555555-5555-5555-5555-555555555555',
+        'authenticated', 'authenticated',
+        'e2e-provider@test.local',
+        extensions.crypt('e2e-password-provider', extensions.gen_salt('bf')),
+        now(),
+        '{"provider": "email", "providers": ["email"]}',
+        '{"role": "provider", "privacy_consent": {"version": "2026-06-16.2", "accepted_at": "2026-07-01T00:00:00Z"}}',
+        now(), now(),
+        '', '', '', '', ''
     );
 
 INSERT INTO auth.identities (
@@ -60,4 +76,68 @@ SELECT
     'email',
     now(), now(), now()
 FROM auth.users AS u
-WHERE u.email IN ('e2e-a@test.local', 'e2e-b@test.local');
+WHERE u.email IN ('e2e-a@test.local', 'e2e-b@test.local', 'e2e-provider@test.local');
+
+-- The provider's public page. Events hang off it, so it must exist before
+-- reservations.spec.ts can publish one.
+INSERT INTO provider_profiles (user_id, name, category, description, location)
+VALUES (
+    '55555555-5555-5555-5555-555555555555',
+    'E2E Sports Club',
+    'sports_club',
+    'Seeded provider for the reservations spec.',
+    'Testville'
+);
+
+-- A venue and an entertainer for discover.spec.ts, so the Discover page has
+-- events, venues and entertainers to show. They never sign in: no password,
+-- no identity.
+INSERT INTO auth.users (
+    instance_id, id, aud, role, email,
+    email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+    created_at, updated_at,
+    confirmation_token, recovery_token,
+    email_change, email_change_token_new, email_change_token_current
+)
+VALUES
+    (
+        '00000000-0000-0000-0000-000000000000',
+        '66666666-6666-6666-6666-666666666666',
+        'authenticated', 'authenticated',
+        'e2e-venue@test.local',
+        now(),
+        '{"provider": "email", "providers": ["email"]}',
+        '{"role": "provider"}',
+        now(), now(),
+        '', '', '', '', ''
+    ),
+    (
+        '00000000-0000-0000-0000-000000000000',
+        '77777777-7777-7777-7777-777777777777',
+        'authenticated', 'authenticated',
+        'e2e-entertainer@test.local',
+        now(),
+        '{"provider": "email", "providers": ["email"]}',
+        '{"role": "provider"}',
+        now(), now(),
+        '', '', '', '', ''
+    );
+
+INSERT INTO provider_profiles (user_id, name, category, kind, description, location)
+VALUES
+    (
+        '66666666-6666-6666-6666-666666666666',
+        'E2E Leisure Centre',
+        'council',
+        'venue',
+        'Seeded venue for the discover spec.',
+        'Testville'
+    ),
+    (
+        '77777777-7777-7777-7777-777777777777',
+        'E2E Magician',
+        'other',
+        'entertainer',
+        'Seeded entertainer for the discover spec.',
+        'Testville'
+    );

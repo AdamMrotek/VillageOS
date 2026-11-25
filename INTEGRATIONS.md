@@ -22,6 +22,7 @@ domain, or onboarding a new environment.
 | **Vercel** | Frontend host | ✅ Live on `villageos.co.uk` (+ `village-os-web.vercel.app`) |
 | **GoDaddy** | Registrar + DNS for `villageos.co.uk` | ✅ Live — GoDaddy nameservers authoritative; records propagated |
 | **Resend** | Transactional email (via Supabase SMTP) | ✅ Live — `villageos.co.uk` verified, wired as Supabase custom SMTP |
+| **Amazon SES** | Calendar invite emails to parents (reserved events) | 🟡 Built, not yet deployed; sending stays **off** (`EmailProvider=none`) until the domain is verified |
 | **ImprovMX** | Inbound email forwarding — privacy contact | ✅ Live — `privacy@villageos.co.uk` → owner Gmail (MX + SPF verified) |
 | **Groq** | LLM provider (**active**) | ✅ Live — `LLM_PROVIDER=groq` |
 | **OpenAI** | LLM provider (standby) | 🟡 Configured but inactive |
@@ -64,6 +65,10 @@ built in the browser. No Google API scope, token or credential is involved, and
 no data goes to Google until the user clicks and confirms in their own calendar.
 A real sync (`calendar.events` scope) would need token storage plus DPIA/privacy
 updates — not built.
+
+Reserved provider events reach the parent's calendar differently: as a calendar
+invite **emailed** through Amazon SES (below), which the parent's mail and
+calendar app apply. Also no Google API, scope or credential (ADR-026).
 
 ---
 
@@ -190,6 +195,54 @@ wired in as Supabase's custom SMTP server.
 **Current state.** ✅ Live — `villageos.co.uk` is verified in Resend and wired as
 Supabase's custom SMTP, so Auth emails (sign-up, password reset, reauth nonce)
 send from `noreply@villageos.co.uk`. Setup steps in [AUTH.md](AUTH.md#custom-smtp).
+
+---
+
+## Amazon SES — calendar invite emails
+
+**What it does.** Sends the emails for reserved events: the calendar invite on
+reserving, and the updates to it when the provider changes or cancels the
+event or the parent cancels (see
+[PROVIDERS.md](PROVIDERS.md#calendar-invites)). Called with `boto3` (SES v2
+`SendEmail`, raw MIME so the `text/calendar` part survives) from the
+notification worker Lambda (`NotificationWorkerFunction` in
+`apps/api/template.yaml`), behind the `send_email` interface in
+`apps/api/app/services/email.py`. Resend stays as Supabase's SMTP for auth
+emails only.
+
+**Sending domain.** `notify.villageos.co.uk`, from
+`events@notify.villageos.co.uk`. A dedicated subdomain keeps bounces and spam
+complaints on notification mail away from the domain that carries sign-up and
+password-reset emails. The from-address is also the invite's `ORGANIZER`:
+Gmail only applies updates from the organiser, so changing `EMAIL_FROM` after
+invites have gone out stops existing ones updating. Nothing reads mail sent
+back to it (invites ask for no reply).
+
+**Current state.** 🟡 Built, not yet deployed (rollout state:
+[PROVIDER_EVENTS_STATUS.md](docs/PROVIDER_EVENTS_STATUS.md)). Once deployed,
+the worker runs every minute; with `EmailProvider` set to `none` it sends
+nothing and leaves `notification_outbox` rows pending. In-app "Updated" badges
+do not depend on it.
+
+**To switch on.**
+
+1. SES console (`eu-north-1`) → verify the domain identity
+   `notify.villageos.co.uk`; add the three DKIM CNAMEs it shows in GoDaddy.
+   Optionally set a custom MAIL FROM (an MX and an SPF TXT record).
+2. Check the `_dmarc.villageos.co.uk` policy, if set, covers the subdomain.
+   Gmail is stricter about invites from senders that fail DKIM/DMARC.
+3. Test invites while still in the sandbox, which only sends to verified
+   addresses: verify a Gmail and an iCloud address, then run the worker
+   locally against the local stack with `EMAIL_PROVIDER=ses` and AWS
+   credentials allowed to send from the identity. Check phase 4's "done when"
+   (PROVIDER_EVENTS_PLAN.md) in both inboxes and calendars.
+4. Request production access (leaves the sandbox; takes about a day).
+5. Set the GitHub Actions variable `EMAIL_PROVIDER=ses` and redeploy the API.
+   The worker's role is already limited to `ses:SendEmail` and
+   `ses:SendRawEmail` on that identity.
+
+The deploy role needs permission to create the worker function, its role and
+its EventBridge schedule rule.
 
 ---
 

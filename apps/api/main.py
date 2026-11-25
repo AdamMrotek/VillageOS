@@ -6,7 +6,18 @@ from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
-from app.routers import account, admin, demo, events, extract, health, providers
+from app.routers import (
+    account,
+    admin,
+    demo,
+    discover,
+    events,
+    extract,
+    health,
+    provider_events,
+    providers,
+    reservations,
+)
 
 # Populate os.environ from .env before the first get_settings() call below.
 # Nothing reads configuration at import time, so this no longer needs to
@@ -30,7 +41,10 @@ app.include_router(events.router)
 app.include_router(events.action_items_router)
 app.include_router(extract.router)
 app.include_router(demo.router)
+app.include_router(discover.router)
 app.include_router(providers.router)
+app.include_router(provider_events.router)
+app.include_router(reservations.router)
 app.include_router(account.router)
 app.include_router(admin.router)
 

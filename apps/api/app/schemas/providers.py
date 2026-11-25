@@ -13,11 +13,21 @@ class ProviderCategory(StrEnum):
     other = "other"
 
 
+class ProviderKind(StrEnum):
+    """How parents use a provider, separate from its category (sector).
+    Schools and councils are organisers."""
+
+    venue = "venue"  # a place families go: soft play, pool, library
+    organiser = "organiser"  # runs dated events
+    entertainer = "entertainer"  # booked for private parties: magician, face painter
+
+
 class ProviderProfileInput(BaseModel):
     """Public organisation details a provider edits about themselves."""
 
     name: str = Field(..., description="Organisation name")
     category: ProviderCategory
+    kind: ProviderKind = ProviderKind.organiser
     description: str | None = Field(None, description="Up to a few sentences, max 600 chars")
     location: str | None = None
     website: str | None = None

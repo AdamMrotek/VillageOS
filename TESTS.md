@@ -19,6 +19,7 @@ catches a failure mode the others structurally can't.
 | **API unit / integration** | `apps/api/tests/` | pytest | Schemas, extraction pipeline, quota, provider factory, fake-LLM seam. |
 | **Architectural guards** | `apps/api/tests/test_db_boundary.py` | pytest (AST walk) | Structural invariants — e.g. user routes never touch the RLS-bypassing service-role client. |
 | **DB / RLS guard** | `apps/api/tests/test_rls_coverage.py` | pytest (migration parse) | Every `public` table has RLS enabled (see [RLS guard](#rls-and-the-boundary-tests)). |
+| **DB rules** | `supabase/tests/provider_events.sh` | bash + psql on local Supabase | Rules that live in Postgres: reservation capacity under concurrency, RLS, the change-tracking trigger, the email outbox. |
 | **E2E** | `e2e/` (`@repo/e2e`) | Playwright + local Supabase | Real browser → Next.js → FastAPI → Postgres, real auth + RLS; LLM faked. |
 
 ## Running tests locally
@@ -37,6 +38,9 @@ make e2e-report     # open the HTML report from the last run
 
 # Iterating on specs with the stack already up + seeded (skips the reset):
 pnpm --filter @repo/e2e test
+
+# Database rules (needs the local Supabase stack with migrations applied)
+bash supabase/tests/provider_events.sh
 ```
 
 E2E needs Docker running (for `supabase start`) and stops any dev server on

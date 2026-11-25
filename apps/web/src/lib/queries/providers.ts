@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
+import { DISCOVER_KEY } from "@/lib/queries/discover";
 import type {
   ProviderProfileInput,
   StoredProviderProfile,
@@ -81,6 +82,7 @@ export function useUpdateMyProvider() {
     onSuccess: (data) => {
       qc.setQueryData(MY_PROVIDER_KEY, data);
       qc.invalidateQueries({ queryKey: PROVIDERS_KEY });
+      qc.invalidateQueries({ queryKey: DISCOVER_KEY });
     },
     meta: { errorMessage: "Couldn't save your details. Please try again." },
   });

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { providerCategoryStyle } from "@/lib/provider-styles";
 import type {
   ProviderCategory,
+  ProviderKind,
   StoredProviderProfile,
 } from "@/lib/types/providers";
 
@@ -13,6 +14,12 @@ export const CATEGORY_LABELS: Record<ProviderCategory, string> = {
   council: "Council",
   library: "Library",
   other: "Other",
+};
+
+export const KIND_LABELS: Record<ProviderKind, string> = {
+  venue: "Venue",
+  organiser: "Organiser",
+  entertainer: "Entertainer",
 };
 
 export function CategoryBadge({ category }: { category: ProviderCategory }) {

@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     provider_cover_bucket: str | None = None
     provider_cover_cdn_domain: str | None = None
 
+    # Reserved-event emails: calendar invites and their updates (the
+    # notification worker). "none" = the worker does nothing and leaves the
+    # outbox pending; "log" = write the email to the log instead of sending
+    # (local dev); "ses" = send through Amazon SES.
+    email_provider: str = "none"
+    # Also the invite's ORGANIZER: Gmail only applies updates from the
+    # organiser, so this must stay the address the email is sent from.
+    email_from: str = "VillageOS <events@notify.villageos.co.uk>"
+    # Where links in emails point (the web app).
+    app_url: str = "http://localhost:3000"
+
     # App
     allowed_origins: str = "http://localhost:3000"
     log_level: str = "INFO"
